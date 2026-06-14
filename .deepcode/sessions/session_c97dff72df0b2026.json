@@ -1,0 +1,27 @@
+{
+  "id": "session_c97dff72df0b2026",
+  "worktree": "/home/irving/ruas/repositorios/llama-player",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "status": "error",
+  "messages": [
+    {
+      "role": "user",
+      "source": "user",
+      "content": "Oi",
+      "id": "msg_f4244765457188b8",
+      "createdAt": "2026-05-15T00:24:55.284Z"
+    },
+    {
+      "role": "assistant",
+      "source": "ui",
+      "content": "Error executing task: OpenRouter did not respond correctly. Check connectivity, base URL, and try again.",
+      "id": "msg_e5d3dad2a98c7bff",
+      "createdAt": "2026-05-15T00:25:05.961Z"
+    }
+  ],
+  "activities": [],
+  "createdAt": "2026-05-15T00:24:49.329Z",
+  "updatedAt": "2026-05-15T00:25:42.343Z",
+  "metadata": {}
+}

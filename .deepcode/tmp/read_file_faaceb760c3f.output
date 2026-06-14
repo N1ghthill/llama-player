@@ -1,0 +1,508 @@
+    1 | /**
+    2 |  * 🦙 Llama Player — DriveBrowser Component
+    3 |  *
+    4 |  * Componente para navegar no Google Drive, listar pastas e arquivos
+    5 |  * de áudio, e adicioná-los à playlist.
+    6 |  */
+    7 | 
+    8 | import { useState, useCallback, useEffect } from "react";
+    9 | import { useGoogleDrive } from "../hooks/useGoogleDrive";
+   10 | import type { DriveFile, DriveFolder, SyncedPlaylist } from "../services/googleDrive";
+   11 | import { isAudioFile } from "../services/googleDrive";
+   12 | import type { Track } from "../types";
+   13 | 
+   14 | interface DriveBrowserProps {
+   15 |   onAddTracks: (tracks: Track[]) => void;
+   16 |   disabled?: boolean;
+   17 | }
+   18 | 
+   19 | export function DriveBrowser({ onAddTracks, disabled = false }: DriveBrowserProps) {
+   20 |   const {
+   21 |     state,
+   22 |     login,
+   23 |     logout,
+   24 |     navigateToFolder,
+   25 |     navigateToBreadcrumb,
+   26 |     goUp,
+   27 |     driveFilesToTracks,
+   28 |     searchAudio,
+   29 |     refreshCurrentFolder,
+   30 |     clearDriveCache,
+   31 |     syncWithFolder,
+   32 |     getSyncedPlaylists,
+   33 |     removeSyncedPlaylist,
+   34 |     loadSyncedPlaylistTracks,
+   35 |     CLIENT_ID,
+   36 |   } = useGoogleDrive();
+   37 | 
+   38 |   const [searchQuery, setSearchQuery] = useState("");
+   39 |   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+   40 |   const [isAdding, setIsAdding] = useState(false);
+   41 |   const [syncedPlaylists, setSyncedPlaylists] = useState<SyncedPlaylist[]>([]);
+   42 |   const [showSynced, setShowSynced] = useState(false);
+   43 |   const [syncingFolder, setSyncingFolder] = useState(false);
+   44 | 
+   45 |   // Carrega playlists sincronizadas ao montar
+   46 |   useEffect(() => {
+   47 |     setSyncedPlaylists(getSyncedPlaylists());
+   48 |   }, [getSyncedPlaylists]);
+   49 | 
+   50 |   /**
+   51 |    * Alterna seleção de um arquivo.
+   52 |    */
+   53 |   const toggleSelect = useCallback((fileId: string) => {
+   54 |     setSelectedFiles((prev) => {
+   55 |       const next = new Set(prev);
+   56 |       if (next.has(fileId)) {
+   57 |         next.delete(fileId);
+   58 |       } else {
+   59 |         next.add(fileId);
+   60 |       }
+   61 |       return next;
+   62 |     });
+   63 |   }, []);
+   64 | 
+   65 |   /**
+   66 |    * Adiciona arquivos selecionados à playlist.
+   67 |    */
+   68 |   const handleAddSelected = useCallback(async () => {
+   69 |     const audioFiles = state.items.filter(
+   70 |       (item): item is DriveFile => isAudioFile(item) && selectedFiles.has(item.id)
+   71 |     );
+   72 | 
+   73 |     if (audioFiles.length === 0) return;
+   74 | 
+   75 |     setIsAdding(true);
+   76 |     try {
+   77 |       const tracks = driveFilesToTracks(audioFiles);
+   78 |       onAddTracks(tracks);
+   79 |       setSelectedFiles(new Set());
+   80 |     } catch (err) {
+   81 |       console.error("[Llama Player] Erro ao adicionar tracks do Drive:", err);
+   82 |     } finally {
+   83 |       setIsAdding(false);
+   84 |     }
+   85 |   }, [state.items, selectedFiles, driveFilesToTracks, onAddTracks]);
+   86 | 
+   87 |   /**
+   88 |    * Adiciona TODOS os arquivos de áudio da pasta atual.
+   89 |    */
+   90 |   const handleAddAll = useCallback(() => {
+   91 |     const audioFiles = state.items.filter(isAudioFile) as DriveFile[];
+   92 |     if (audioFiles.length === 0) return;
+   93 | 
+   94 |     const tracks = driveFilesToTracks(audioFiles);
+   95 |     onAddTracks(tracks);
+   96 |   }, [state.items, driveFilesToTracks, onAddTracks]);
+   97 | 
+   98 |   /**
+   99 |    * Recarrega a pasta atual (ignorando cache).
+  100 |    */
+  101 |   const handleRefresh = useCallback(() => {
+  102 |     clearDriveCache();
+  103 |     refreshCurrentFolder();
+  104 |   }, [clearDriveCache, refreshCurrentFolder]);
+  105 | 
+  106 |   /**
+  107 |    * Sincroniza a pasta atual como playlist.
+  108 |    */
+  109 |   const handleSyncFolder = useCallback(async () => {
+  110 |     if (!state.currentFolder) return;
+  111 |     setSyncingFolder(true);
+  112 |     try {
+  113 |       const synced = await syncWithFolder(state.currentFolder);
+  114 |       setSyncedPlaylists(getSyncedPlaylists());
+  115 |       // Adiciona as tracks da pasta à playlist
+  116 |       const tracks = await loadSyncedPlaylistTracks(synced);
+  117 |       if (tracks.length > 0) {
+  118 |         onAddTracks(tracks);
+  119 |       }
+  120 |     } catch (err) {
+  121 |       console.error("[Llama Player] Erro ao sincronizar pasta:", err);
+  122 |     } finally {
+  123 |       setSyncingFolder(false);
+  124 |     }
+  125 |   }, [state.currentFolder, syncWithFolder, getSyncedPlaylists, loadSyncedPlaylistTracks, onAddTracks]);
+  126 | 
+  127 |   /**
+  128 |    * Carrega tracks de uma playlist sincronizada.
+  129 |    */
+  130 |   const handleLoadSynced = useCallback(
+  131 |     async (synced: SyncedPlaylist) => {
+  132 |       const tracks = await loadSyncedPlaylistTracks(synced);
+  133 |       if (tracks.length > 0) {
+  134 |         onAddTracks(tracks);
+  135 |       }
+  136 |     },
+  137 |     [loadSyncedPlaylistTracks, onAddTracks]
+  138 |   );
+  139 | 
+  140 |   /**
+  141 |    * Remove uma playlist sincronizada.
+  142 |    */
+  143 |   const handleRemoveSynced = useCallback(
+  144 |     (folderId: string) => {
+  145 |       removeSyncedPlaylist(folderId);
+  146 |       setSyncedPlaylists(getSyncedPlaylists());
+  147 |     },
+  148 |     [removeSyncedPlaylist, getSyncedPlaylists]
+  149 |   );
+  150 | 
+  151 |   /**
+  152 |    * Dispara busca.
+  153 |    */
+  154 |   const handleSearch = useCallback(
+  155 |     (e: React.FormEvent) => {
+  156 |       e.preventDefault();
+  157 |       if (searchQuery.trim()) {
+  158 |         searchAudio(searchQuery.trim());
+  159 |       }
+  160 |     },
+  161 |     [searchQuery, searchAudio]
+  162 |   );
+  163 | 
+  164 |   /**
+  165 |    * Formata tamanho do arquivo.
+  166 |    */
+  167 |   const formatSize = (bytes?: number): string => {
+  168 |     if (!bytes) return "";
+  169 |     const units = ["B", "KB", "MB", "GB"];
+  170 |     let value = bytes;
+  171 |     let unitIndex = 0;
+  172 |     while (value >= 1024 && unitIndex < units.length - 1) {
+  173 |       value /= 1024;
+  174 |       unitIndex++;
+  175 |     }
+  176 |     return `${value.toFixed(1)} ${units[unitIndex]}`;
+  177 |   };
+  178 | 
+  179 |   /**
+  180 |    * Formata data.
+  181 |    */
+  182 |   const formatDate = (dateStr?: string): string => {
+  183 |     if (!dateStr) return "";
+  184 |     const date = new Date(dateStr);
+  185 |     return date.toLocaleDateString("pt-BR", {
+  186 |       day: "2-digit",
+  187 |       month: "2-digit",
+  188 |       year: "numeric",
+  189 |     });
+  190 |   };
+  191 | 
+  192 |   // --- Renderização condicional ---
+  193 | 
+  194 |   // Se não tem Client ID configurado
+  195 |   if (!CLIENT_ID) {
+  196 |     return (
+  197 |       <div className="drive-panel">
+  198 |         <div className="panel-header">☁️ GOOGLE DRIVE</div>
+  199 |         <div className="drive-config-warning">
+  200 |           <p>⚠️ Google Drive não configurado</p>
+  201 |           <p className="drive-config-hint">
+  202 |             Crie um arquivo <code>.env</code> na raiz do projeto com:
+  203 |           </p>
+  204 |           <pre className="drive-config-code">
+  205 |             VITE_GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
+  206 |           </pre>
+  207 |           <p className="drive-config-hint">
+  208 |             Obtenha um Client ID no{" "}
+  209 |             <a
+  210 |               href="https://console.cloud.google.com/apis/credentials"
+  211 |               target="_blank"
+  212 |               rel="noopener noreferrer"
+  213 |             >
+  214 |               Google Cloud Console
+  215 |             </a>
+  216 |             , ative a Google Drive API e configure o redirect URI para
+  217 |             seu domínio (ex: http://localhost:1420).
+  218 |           </p>
+  219 |         </div>
+  220 |       </div>
+  221 |     );
+  222 |   }
+  223 | 
+  224 |   // Estado de carregamento inicial
+  225 |   if (state.isLoading && !state.isAuthenticated) {
+  226 |     return (
+  227 |       <div className="drive-panel">
+  228 |         <div className="panel-header">☁️ GOOGLE DRIVE</div>
+  229 |         <div className="drive-loading">
+  230 |           <span className="drive-spinner" />
+  231 |           <span>Conectando ao Google Drive...</span>
+  232 |         </div>
+  233 |       </div>
+  234 |     );
+  235 |   }
+  236 | 
+  237 |   // Não autenticado — tela de login
+  238 |   if (!state.isAuthenticated) {
+  239 |     return (
+  240 |       <div className="drive-panel">
+  241 |         <div className="panel-header">☁️ GOOGLE DRIVE</div>
+  242 |         <div className="drive-login">
+  243 |           <p className="drive-login-text">
+  244 |             Conecte-se ao Google Drive para acessar suas músicas.
+  245 |           </p>
+  246 |           <button
+  247 |             className="drive-login-btn"
+  248 |             onClick={login}
+  249 |             disabled={disabled}
+  250 |           >
+  251 |             ☁️ Entrar com Google
+  252 |           </button>
+  253 |           {state.error && (
+  254 |             <p className="drive-error">{state.error}</p>
+  255 |           )}
+  256 |         </div>
+  257 |       </div>
+  258 |     );
+  259 |   }
+  260 | 
+  261 |   // Autenticado — navegador do Drive
+  262 |   const audioCount = state.items.filter(isAudioFile).length;
+  263 |   const selectedCount = selectedFiles.size;
+  264 | 
+  265 |   return (
+  266 |     <div className="drive-panel">
+  267 |       <div className="panel-header">
+  268 |         <span>☁️ GOOGLE DRIVE</span>
+  269 |         <div className="drive-user-info">
+  270 |           {state.user?.picture && (
+  271 |             <img
+  272 |               src={state.user.picture}
+  273 |               alt=""
+  274 |               className="drive-user-avatar"
+  275 |             />
+  276 |           )}
+  277 |           <span className="drive-user-name">{state.user?.name}</span>
+  278 |           <button
+  279 |             className="drive-logout-btn"
+  280 |             onClick={logout}
+  281 |             title="Sair do Google Drive"
+  282 |           >
+  283 |             ✕
+  284 |           </button>
+  285 |         </div>
+  286 |       </div>
+  287 | 
+  288 |       {/* Breadcrumb */}
+  289 |       <div className="drive-breadcrumbs">
+  290 |         <button
+  291 |           className="drive-breadcrumb-btn"
+  292 |           onClick={() => navigateToBreadcrumb(-1)}
+  293 |           title="Raiz do Drive"
+  294 |         >
+  295 |           🏠
+  296 |         </button>
+  297 |         {state.breadcrumbs.map((folder, index) => (
+  298 |           <span key={folder.id} className="drive-breadcrumb-segment">
+  299 |             <span className="drive-breadcrumb-sep">/</span>
+  300 |             <button
+  301 |               className="drive-breadcrumb-btn"
+  302 |               onClick={() => navigateToBreadcrumb(index)}
+  303 |             >
+  304 |               {folder.name}
+  305 |             </button>
+  306 |           </span>
+  307 |         ))}
+  308 |         {state.currentFolder && (
+  309 |           <span className="drive-breadcrumb-segment">
+  310 |             <span className="drive-breadcrumb-sep">/</span>
+  311 |             <span className="drive-breadcrumb-current">
+  312 |               {state.currentFolder.name}
+  313 |             </span>
+  314 |           </span>
+  315 |         )}
+  316 |       </div>
+  317 | 
+  318 |       {/* Barra de busca */}
+  319 |       <form className="drive-search" onSubmit={handleSearch}>
+  320 |         <input
+  321 |           type="text"
+  322 |           className="drive-search-input"
+  323 |           placeholder="Buscar músicas..."
+  324 |           value={searchQuery}
+  325 |           onChange={(e) => setSearchQuery(e.target.value)}
+  326 |         />
+  327 |         <button type="submit" className="drive-search-btn" title="Buscar">
+  328 |           🔍
+  329 |         </button>
+  330 |       </form>
+  331 | 
+  332 |       {/* Ações em massa */}
+  333 |       <div className="drive-actions">
+  334 |         <span className="drive-item-count">
+  335 |           {audioCount} áudio{audioCount !== 1 ? "s" : ""}
+  336 |           {state.items.length > audioCount &&
+  337 |             ` · ${state.items.length - audioCount} pasta${state.items.length - audioCount !== 1 ? "s" : ""}`}
+  338 |         </span>
+  339 |         <div className="drive-action-btns">
+  340 |           <button
+  341 |             className="drive-action-btn"
+  342 |             onClick={handleRefresh}
+  343 |             disabled={state.isLoading}
+  344 |             title="Recarregar (ignorar cache)"
+  345 |           >
+  346 |             🔄
+  347 |           </button>
+  348 |           {state.breadcrumbs.length > 0 && (
+  349 |             <button
+  350 |               className="drive-action-btn"
+  351 |               onClick={goUp}
+  352 |               title="Subir um nível"
+  353 |             >
+  354 |               ⬆ Subir
+  355 |             </button>
+  356 |           )}
+  357 |           {state.currentFolder && (
+  358 |             <button
+  359 |               className="drive-action-btn"
+  360 |               onClick={handleSyncFolder}
+  361 |               disabled={disabled || syncingFolder}
+  362 |               title="Sincronizar playlist com esta pasta"
+  363 |             >
+  364 |               {syncingFolder ? "⏳" : "🔗 Sinc."}
+  365 |             </button>
+  366 |           )}
+  367 |           {audioCount > 0 && (
+  368 |             <button
+  369 |               className="drive-action-btn"
+  370 |               onClick={handleAddAll}
+  371 |               disabled={disabled}
+  372 |               title="Adicionar todos os áudios à playlist"
+  373 |             >
+  374 |               📥 Todos
+  375 |             </button>
+  376 |           )}
+  377 |           {selectedCount > 0 && (
+  378 |             <button
+  379 |               className="drive-action-btn drive-action-btn-primary"
+  380 |               onClick={handleAddSelected}
+  381 |               disabled={disabled || isAdding}
+  382 |               title={`Adicionar ${selectedCount} arquivo${selectedCount !== 1 ? "s" : ""} selecionado${selectedCount !== 1 ? "s" : ""}`}
+  383 |             >
+  384 |               {isAdding ? "⏳" : `📥 +${selectedCount}`}
+  385 |             </button>
+  386 |           )}
+  387 |         </div>
+  388 |       </div>
+  389 | 
+  390 |       {/* Playlists sincronizadas */}
+  391 |       {syncedPlaylists.length > 0 && (
+  392 |         <div className="drive-synced-section">
+  393 |           <button
+  394 |             className="drive-synced-toggle"
+  395 |             onClick={() => setShowSynced((v) => !v)}
+  396 |           >
+  397 |             {showSynced ? "▼" : "▶"} Playlists sincronizadas ({syncedPlaylists.length})
+  398 |           </button>
+  399 |           {showSynced && (
+  400 |             <ul className="drive-synced-list">
+  401 |               {syncedPlaylists.map((synced) => (
+  402 |                 <li key={synced.folderId} className="drive-synced-item">
+  403 |                   <span className="drive-synced-icon">📁</span>
+  404 |                   <span className="drive-synced-name">{synced.folderName}</span>
+  405 |                   <span className="drive-synced-meta">
+  406 |                     {synced.trackIds.length} músicas
+  407 |                   </span>
+  408 |                   <button
+  409 |                     className="drive-synced-load-btn"
+  410 |                     onClick={() => handleLoadSynced(synced)}
+  411 |                     title="Carregar playlist"
+  412 |                   >
+  413 |                     📥
+  414 |                   </button>
+  415 |                   <button
+  416 |                     className="drive-synced-remove-btn"
+  417 |                     onClick={() => handleRemoveSynced(synced.folderId)}
+  418 |                     title="Remover playlist sincronizada"
+  419 |                   >
+  420 |                     ✕
+  421 |                   </button>
+  422 |                 </li>
+  423 |               ))}
+  424 |             </ul>
+  425 |           )}
+  426 |         </div>
+  427 |       )}
+  428 | 
+  429 |       {/* Lista de arquivos */}
+  430 |       <div className="drive-file-list">
+  431 |         {state.isLoading ? (
+  432 |           <div className="drive-loading">
+  433 |             <span className="drive-spinner" />
+  434 |             <span>Carregando...</span>
+  435 |           </div>
+  436 |         ) : state.items.length === 0 ? (
+  437 |           <div className="drive-empty">
+  438 |             {searchQuery
+  439 |               ? "Nenhum resultado encontrado"
+  440 |               : "Esta pasta está vazia"}
+  441 |           </div>
+  442 |         ) : (
+  443 |           <ul className="drive-items">
+  444 |             {state.items.map((item) => {
+  445 |               const itemAny = item as any;
+  446 |               const isFolderItem = itemAny.mimeType === "application/vnd.google-apps.folder";
+  447 |               const isAudio = isAudioFile(item);
+  448 |               const isSelected = selectedFiles.has(itemAny.id);
+  449 | 
+  450 |               if (isFolderItem) {
+  451 |                 return (
+  452 |                   <li
+  453 |                     key={itemAny.id}
+  454 |                     className="drive-item drive-item-folder"
+  455 |                     onClick={() => navigateToFolder(item as unknown as DriveFolder)}
+  456 |                     title={`Abrir pasta ${itemAny.name}`}
+  457 |                   >
+  458 |                     <span className="drive-item-icon">📁</span>
+  459 |                     <span className="drive-item-name">{itemAny.name}</span>
+  460 |                   </li>
+  461 |                 );
+  462 |               }
+  463 | 
+  464 |               if (!isAudio) {
+  465 |                 return (
+  466 |                   <li key={itemAny.id} className="drive-item drive-item-other">
+  467 |                     <span className="drive-item-icon">📄</span>
+  468 |                     <span className="drive-item-name">{itemAny.name}</span>
+  469 |                   </li>
+  470 |                 );
+  471 |               }
+  472 | 
+  473 |               // Arquivo de áudio
+  474 |               return (
+  475 |                 <li
+  476 |                   key={itemAny.id}
+  477 |                   className={`drive-item drive-item-audio ${
+  478 |                     isSelected ? "drive-item-selected" : ""
+  479 |                   }`}
+  480 |                   onClick={() => toggleSelect(itemAny.id)}
+  481 |                 >
+  482 |                   <span className="drive-item-checkbox">
+  483 |                     {isSelected ? "☑" : "☐"}
+  484 |                   </span>
+  485 |                   <span className="drive-item-icon">🎵</span>
+  486 |                   <span className="drive-item-name">{itemAny.name}</span>
+  487 |                   <span className="drive-item-size">
+  488 |                     {formatSize(itemAny.size)}
+  489 |                   </span>
+  490 |                   <span className="drive-item-date">
+  491 |                     {formatDate(itemAny.modifiedTime)}
+  492 |                   </span>
+  493 |                 </li>
+  494 |               );
+  495 |             })}
+  496 |           </ul>
+  497 |         )}
+  498 |       </div>
+  499 | 
+  500 |       {state.error && (
+  501 |         <div className="drive-error-bar">
+  502 |           <span>⚠️ {state.error}</span>
+  503 |         </div>
+  504 |       )}
+  505 |     </div>
+  506 |   );
+  507 | }
+  508 | 

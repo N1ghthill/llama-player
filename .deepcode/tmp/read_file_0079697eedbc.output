@@ -1,0 +1,423 @@
+    1 | import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+    2 | import type { Track } from "../types";
+    3 | 
+    4 | type SortField = "title" | "artist" | "duration";
+    5 | type SortDirection = "asc" | "desc";
+    6 | 
+    7 | interface PlaylistProps {
+    8 |   tracks: Track[];
+    9 |   currentTrackId: string | null;
+   10 |   isPlaying: boolean;
+   11 |   onSelectTrack: (track: Track) => void;
+   12 |   onReorderPlaylist?: (tracks: Track[]) => void;
+   13 |   onDropFiles?: (files: FileList) => void;
+   14 |   onToggleFavorite?: (trackId: string) => void;
+   15 | }
+   16 | 
+   17 | const ITEM_HEIGHT = 32; // px
+   18 | const OVERSCAN = 5; // render extra items above/below viewport
+   19 | const VIRTUALIZATION_THRESHOLD = 100; // only virtualize above this many items
+   20 | 
+   21 | function formatDuration(seconds: number): string {
+   22 |   const mins = Math.floor(seconds / 60);
+   23 |   const secs = Math.floor(seconds % 60);
+   24 |   return `${mins}:${secs.toString().padStart(2, "0")}`;
+   25 | }
+   26 | 
+   27 | function normalizeText(text: string): string {
+   28 |   return text
+   29 |     .normalize("NFD")
+   30 |     .replace(/[\u0300-\u036f]/g, "")
+   31 |     .toLowerCase();
+   32 | }
+   33 | 
+   34 | function getSortValue(track: Track, field: SortField): string {
+   35 |   switch (field) {
+   36 |     case "title":
+   37 |       return normalizeText(track.title);
+   38 |     case "artist":
+   39 |       return normalizeText(track.artist ?? "");
+   40 |     case "duration":
+   41 |       return String(track.duration).padStart(10, "0");
+   42 |   }
+   43 | }
+   44 | 
+   45 | export function Playlist({
+   46 |   tracks,
+   47 |   currentTrackId,
+   48 |   isPlaying,
+   49 |   onSelectTrack,
+   50 |   onReorderPlaylist,
+   51 |   onDropFiles,
+   52 |   onToggleFavorite,
+   53 | }: PlaylistProps) {
+   54 |   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+   55 |   const dragItemIndex = useRef<number | null>(null);
+   56 |   const [isDragOver, setIsDragOver] = useState(false);
+   57 |   const [searchQuery, setSearchQuery] = useState("");
+   58 |   const [sortField, setSortField] = useState<SortField | null>(null);
+   59 |   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+   60 | 
+   61 |   // Virtual scrolling state
+   62 |   const scrollContainerRef = useRef<HTMLUListElement>(null);
+   63 |   const [scrollTop, setScrollTop] = useState(0);
+   64 |   const [containerHeight, setContainerHeight] = useState(400);
+   65 | 
+   66 |   // Filtro de busca
+   67 |   const normalizedQuery = normalizeText(searchQuery);
+   68 | 
+   69 |   const handleSort = useCallback(
+   70 |     (field: SortField) => {
+   71 |       if (sortField === field) {
+   72 |         const newDirection = sortDirection === "asc" ? "desc" : "asc";
+   73 |         setSortDirection(newDirection);
+   74 |         const sorted = [...tracks].sort((a, b) => {
+   75 |           const aVal = getSortValue(a, field);
+   76 |           const bVal = getSortValue(b, field);
+   77 |           const cmp = aVal.localeCompare(bVal);
+   78 |           return newDirection === "asc" ? cmp : -cmp;
+   79 |         });
+   80 |         onReorderPlaylist?.(sorted);
+   81 |       } else {
+   82 |         setSortField(field);
+   83 |         setSortDirection("asc");
+   84 |         const sorted = [...tracks].sort((a, b) => {
+   85 |           const aVal = getSortValue(a, field);
+   86 |           const bVal = getSortValue(b, field);
+   87 |           return aVal.localeCompare(bVal);
+   88 |         });
+   89 |         onReorderPlaylist?.(sorted);
+   90 |       }
+   91 |     },
+   92 |     [tracks, sortField, sortDirection, onReorderPlaylist]
+   93 |   );
+   94 | 
+   95 |   const filteredTracks = useMemo(() => {
+   96 |     if (!normalizedQuery) return tracks;
+   97 |     return tracks.filter((track) => {
+   98 |       const title = normalizeText(track.title);
+   99 |       const artist = track.artist ? normalizeText(track.artist) : "";
+  100 |       return title.includes(normalizedQuery) || artist.includes(normalizedQuery);
+  101 |     });
+  102 |   }, [tracks, normalizedQuery]);
+  103 | 
+  104 |   const filteredToOriginalIndex = useMemo(() => {
+  105 |     if (!normalizedQuery) return null;
+  106 |     return filteredTracks.map((ft) => tracks.indexOf(ft));
+  107 |   }, [filteredTracks, tracks, normalizedQuery]);
+  108 | 
+  109 |   // Virtual scrolling calculations
+  110 |   const shouldVirtualize = filteredTracks.length > VIRTUALIZATION_THRESHOLD;
+  111 |   const totalHeight = filteredTracks.length * ITEM_HEIGHT;
+  112 | 
+  113 |   const visibleRange = useMemo(() => {
+  114 |     if (!shouldVirtualize) {
+  115 |       return { start: 0, end: filteredTracks.length };
+  116 |     }
+  117 |     const start = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
+  118 |     const end = Math.min(
+  119 |       filteredTracks.length,
+  120 |       Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + OVERSCAN
+  121 |     );
+  122 |     return { start, end };
+  123 |   }, [shouldVirtualize, scrollTop, containerHeight, filteredTracks.length]);
+  124 | 
+  125 |   const visibleTracks = useMemo(() => {
+  126 |     return filteredTracks.slice(visibleRange.start, visibleRange.end);
+  127 |   }, [filteredTracks, visibleRange.start, visibleRange.end]);
+  128 | 
+  129 |   // Measure container height on mount and resize
+  130 |   useEffect(() => {
+  131 |     const container = scrollContainerRef.current;
+  132 |     if (!container) return;
+  133 | 
+  134 |     const observer = new ResizeObserver((entries) => {
+  135 |       for (const entry of entries) {
+  136 |         setContainerHeight(entry.contentRect.height);
+  137 |       }
+  138 |     });
+  139 | 
+  140 |     observer.observe(container);
+  141 |     setContainerHeight(container.clientHeight || 400);
+  142 | 
+  143 |     return () => observer.disconnect();
+  144 |   }, []);
+  145 | 
+  146 |   const handleScroll = useCallback(() => {
+  147 |     const container = scrollContainerRef.current;
+  148 |     if (container) {
+  149 |       setScrollTop(container.scrollTop);
+  150 |     }
+  151 |   }, []);
+  152 | 
+  153 |   // Scroll to current track when it changes
+  154 |   useEffect(() => {
+  155 |     if (!currentTrackId || !shouldVirtualize) return;
+  156 |     const container = scrollContainerRef.current;
+  157 |     if (!container) return;
+  158 | 
+  159 |     const idx = filteredTracks.findIndex((t) => t.id === currentTrackId);
+  160 |     if (idx === -1) return;
+  161 | 
+  162 |     const itemTop = idx * ITEM_HEIGHT;
+  163 |     const itemBottom = itemTop + ITEM_HEIGHT;
+  164 | 
+  165 |     if (itemTop < scrollTop || itemBottom > scrollTop + containerHeight) {
+  166 |       container.scrollTop = itemTop - containerHeight / 2 + ITEM_HEIGHT / 2;
+  167 |     }
+  168 |   }, [currentTrackId, filteredTracks, shouldVirtualize, scrollTop, containerHeight]);
+  169 | 
+  170 |   // Drag & drop de arquivos do sistema
+  171 |   const handleDragOverWindow = useCallback((e: React.DragEvent) => {
+  172 |     if (e.dataTransfer.types.includes("Files")) {
+  173 |       e.preventDefault();
+  174 |       e.stopPropagation();
+  175 |       setIsDragOver(true);
+  176 |     }
+  177 |   }, []);
+  178 | 
+  179 |   const handleDragLeaveWindow = useCallback((e: React.DragEvent) => {
+  180 |     e.preventDefault();
+  181 |     setIsDragOver(false);
+  182 |   }, []);
+  183 | 
+  184 |   const handleDropWindow = useCallback(
+  185 |     (e: React.DragEvent) => {
+  186 |       e.preventDefault();
+  187 |       e.stopPropagation();
+  188 |       setIsDragOver(false);
+  189 | 
+  190 |       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+  191 |         onDropFiles?.(e.dataTransfer.files);
+  192 |       }
+  193 |     },
+  194 |     [onDropFiles]
+  195 |   );
+  196 | 
+  197 |   const resolveOriginalIndex = useCallback(
+  198 |     (filteredIndex: number): number => {
+  199 |       if (filteredToOriginalIndex) {
+  200 |         return filteredToOriginalIndex[filteredIndex];
+  201 |       }
+  202 |       return filteredIndex;
+  203 |     },
+  204 |     [filteredToOriginalIndex]
+  205 |   );
+  206 | 
+  207 |   const handleDragStart = useCallback(
+  208 |     (e: React.DragEvent<HTMLLIElement>, filteredIndex: number) => {
+  209 |       const originalIndex = resolveOriginalIndex(filteredIndex);
+  210 |       dragItemIndex.current = originalIndex;
+  211 |       e.dataTransfer.effectAllowed = "move";
+  212 |       e.dataTransfer.setData("text/plain", String(originalIndex));
+  213 |       e.currentTarget.classList.add("dragging");
+  214 |     },
+  215 |     [resolveOriginalIndex]
+  216 |   );
+  217 | 
+  218 |   const handleDragEnd = useCallback(
+  219 |     (e: React.DragEvent<HTMLLIElement>) => {
+  220 |       e.currentTarget.classList.remove("dragging");
+  221 |       dragItemIndex.current = null;
+  222 |       setDragOverIndex(null);
+  223 |     },
+  224 |     []
+  225 |   );
+  226 | 
+  227 |   const handleDragOver = useCallback(
+  228 |     (e: React.DragEvent<HTMLLIElement>, filteredIndex: number) => {
+  229 |       e.preventDefault();
+  230 |       e.dataTransfer.dropEffect = "move";
+  231 |       setDragOverIndex(filteredIndex);
+  232 |     },
+  233 |     []
+  234 |   );
+  235 | 
+  236 |   const handleDragLeave = useCallback(() => {
+  237 |     setDragOverIndex(null);
+  238 |   }, []);
+  239 | 
+  240 |   const handleDrop = useCallback(
+  241 |     (e: React.DragEvent<HTMLLIElement>, dropFilteredIndex: number) => {
+  242 |       e.preventDefault();
+  243 |       const fromIndex = dragItemIndex.current;
+  244 |       const dropIndex = resolveOriginalIndex(dropFilteredIndex);
+  245 |       if (fromIndex === null || fromIndex === dropIndex) {
+  246 |         setDragOverIndex(null);
+  247 |         return;
+  248 |       }
+  249 | 
+  250 |       const reordered = [...tracks];
+  251 |       const [movedItem] = reordered.splice(fromIndex, 1);
+  252 |       reordered.splice(dropIndex, 0, movedItem);
+  253 | 
+  254 |       onReorderPlaylist?.(reordered);
+  255 |       dragItemIndex.current = null;
+  256 |       setDragOverIndex(null);
+  257 |     },
+  258 |     [tracks, onReorderPlaylist, resolveOriginalIndex]
+  259 |   );
+  260 | 
+  261 |   const renderTrackItem = useCallback(
+  262 |     (track: Track, displayIndex: number) => {
+  263 |       const filteredIndex = shouldVirtualize
+  264 |         ? visibleRange.start + displayIndex
+  265 |         : displayIndex;
+  266 | 
+  267 |       return (
+  268 |         <li
+  269 |           key={track.id}
+  270 |           className={`playlist-item ${
+  271 |             track.id === currentTrackId ? "active" : ""
+  272 |           } ${dragOverIndex === filteredIndex ? "drag-over" : ""}`}
+  273 |           draggable
+  274 |           onClick={() => onSelectTrack(track)}
+  275 |           onDragStart={(e) => handleDragStart(e, filteredIndex)}
+  276 |           onDragEnd={handleDragEnd}
+  277 |           onDragOver={(e) => handleDragOver(e, filteredIndex)}
+  278 |           onDragLeave={handleDragLeave}
+  279 |           onDrop={(e) => handleDrop(e, filteredIndex)}
+  280 |           title={`${track.title}${track.artist ? ` — ${track.artist}` : ""}`}
+  281 |           style={shouldVirtualize ? { position: "absolute", top: filteredIndex * ITEM_HEIGHT, left: 0, right: 0, height: ITEM_HEIGHT } : undefined}
+  282 |         >
+  283 |           <span className="playlist-item-drag-handle" title="Arrastar para reordenar">
+  284 |             ⠿
+  285 |           </span>
+  286 |           {onToggleFavorite && (
+  287 |             <span
+  288 |               className={`playlist-item-favorite ${track.isFavorite ? "favorite-active" : ""}`}
+  289 |               onClick={(e) => {
+  290 |                 e.stopPropagation();
+  291 |                 onToggleFavorite(track.id);
+  292 |               }}
+  293 |               title={track.isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+  294 |             >
+  295 |               {track.isFavorite ? "♥" : "♡"}
+  296 |             </span>
+  297 |           )}
+  298 |           <span className="playlist-item-icon">
+  299 |             {track.id === currentTrackId && isPlaying ? "▶" : "🎵"}
+  300 |           </span>
+  301 |           <span className="playlist-item-title">{track.title}</span>
+  302 |           {track.artist && (
+  303 |             <span className="playlist-item-artist">{track.artist}</span>
+  304 |           )}
+  305 |           <span className="playlist-item-duration">
+  306 |             {formatDuration(track.duration)}
+  307 |           </span>
+  308 |         </li>
+  309 |       );
+  310 |     },
+  311 |     [
+  312 |       currentTrackId, isPlaying, dragOverIndex, onSelectTrack,
+  313 |       handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop,
+  314 |       onToggleFavorite, shouldVirtualize, visibleRange.start,
+  315 |     ]
+  316 |   );
+  317 | 
+  318 |   return (
+  319 |     <section
+  320 |       className={`playlist-panel ${isDragOver ? "playlist-drag-over" : ""}`}
+  321 |       onDragOver={handleDragOverWindow}
+  322 |       onDragLeave={handleDragLeaveWindow}
+  323 |       onDrop={handleDropWindow}
+  324 |     >
+  325 |       <div className="panel-header">PLAYLIST</div>
+  326 |       {isDragOver && (
+  327 |         <div className="playlist-drop-indicator">
+  328 |           📁 Solte os arquivos para adicionar à playlist
+  329 |         </div>
+  330 |       )}
+  331 |       <div className="playlist-search-container">
+  332 |         <input
+  333 |           type="text"
+  334 |           className="playlist-search-input"
+  335 |           placeholder="Buscar música..."
+  336 |           value={searchQuery}
+  337 |           onChange={(e) => setSearchQuery(e.target.value)}
+  338 |           aria-label="Buscar música na playlist"
+  339 |         />
+  340 |         {searchQuery && (
+  341 |           <button
+  342 |             className="playlist-search-clear"
+  343 |             onClick={() => setSearchQuery("")}
+  344 |             title="Limpar busca"
+  345 |             aria-label="Limpar busca"
+  346 |           >
+  347 |             ✕
+  348 |           </button>
+  349 |         )}
+  350 |       </div>
+  351 |       {searchQuery && (
+  352 |         <div className="playlist-search-count">
+  353 |           {filteredTracks.length === 0
+  354 |             ? "Nenhuma música encontrada"
+  355 |             : `${filteredTracks.length} de ${tracks.length} música${tracks.length !== 1 ? "s" : ""}`}
+  356 |         </div>
+  357 |       )}
+  358 |       <div className="playlist-sort-bar">
+  359 |         <button
+  360 |           className={`playlist-sort-btn ${sortField === "title" ? "active" : ""}`}
+  361 |           onClick={() => handleSort("title")}
+  362 |           title={`Ordenar por nome${sortField === "title" ? (sortDirection === "asc" ? " (A-Z)" : " (Z-A)") : ""}`}
+  363 |         >
+  364 |           Nome {sortField === "title" ? (sortDirection === "asc" ? "▲" : "▼") : ""}
+  365 |         </button>
+  366 |         <button
+  367 |           className={`playlist-sort-btn ${sortField === "artist" ? "active" : ""}`}
+  368 |           onClick={() => handleSort("artist")}
+  369 |           title={`Ordenar por artista${sortField === "artist" ? (sortDirection === "asc" ? " (A-Z)" : " (Z-A)") : ""}`}
+  370 |         >
+  371 |           Artista {sortField === "artist" ? (sortDirection === "asc" ? "▲" : "▼") : ""}
+  372 |         </button>
+  373 |         <button
+  374 |           className={`playlist-sort-btn ${sortField === "duration" ? "active" : ""}`}
+  375 |           onClick={() => handleSort("duration")}
+  376 |           title={`Ordenar por duração${sortField === "duration" ? (sortDirection === "asc" ? " (menor)" : " (maior)") : ""}`}
+  377 |         >
+  378 |           Duração {sortField === "duration" ? (sortDirection === "asc" ? "▲" : "▼") : ""}
+  379 |         </button>
+  380 |       </div>
+  381 |       <ul
+  382 |         className="playlist"
+  383 |         ref={scrollContainerRef}
+  384 |         onScroll={shouldVirtualize ? handleScroll : undefined}
+  385 |         style={shouldVirtualize ? { position: "relative", overflowY: "auto", height: "100%", maxHeight: "400px" } : undefined}
+  386 |       >
+  387 |         {tracks.length === 0 ? (
+  388 |           <li className="playlist-item playlist-empty">
+  389 |             Nenhuma música na playlist
+  390 |           </li>
+  391 |         ) : filteredTracks.length === 0 ? (
+  392 |           <li className="playlist-item playlist-empty">
+  393 |             Nenhuma música encontrada
+  394 |           </li>
+  395 |         ) : shouldVirtualize ? (
+  396 |           <>
+  397 |             <div style={{ height: totalHeight, position: "relative" }}>
+  398 |               {visibleTracks.map((track, i) => renderTrackItem(track, i))}
+  399 |             </div>
+  400 |             {filteredTracks.length > 500 && (
+  401 |               <div className="playlist-virtual-info">
+  402 |                 {filteredTracks.length} músicas · virtual scrolling ativo
+  403 |               </div>
+  404 |             )}
+  405 |           </>
+  406 |         ) : (
+  407 |           filteredTracks.map((track, filteredIndex) =>
+  408 |             renderTrackItem(track, filteredIndex)
+  409 |           )
+  410 |         )}
+  411 |       </ul>
+  412 |       <div className="panel-footer">
+  413 |         <span>{tracks.length} música{tracks.length !== 1 ? "s" : ""}</span>
+  414 |         <span>
+  415 |           {tracks.reduce((acc, t) => acc + t.duration, 0) > 0
+  416 |             ? formatDuration(tracks.reduce((acc, t) => acc + t.duration, 0))
+  417 |             : "—:—:—"}
+  418 |         </span>
+  419 |       </div>
+  420 |     </section>
+  421 |   );
+  422 | }
+  423 | 
