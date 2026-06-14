@@ -53,7 +53,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQxNzcwMEM0RThENTJCQ0YKUldUUEs5WG94QUIzUVRnOFVMMEpXZnhhNThkZ0ZRMUYvYWQ1cGN2MngvN3EwM0lBNEdNaUJXbzgK",
       "endpoints": [
-        "https://github.com/irving/llama-player/releases/latest/download/latest.json"
+        "https://github.com/N1ghthill/llama-player/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

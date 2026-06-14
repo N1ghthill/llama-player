@@ -42,7 +42,7 @@ git push origin v0.1.0
 The updater endpoint is configured for:
 
 ```text
-https://github.com/irving/llama-player/releases/latest/download/latest.json
+https://github.com/N1ghthill/llama-player/releases/latest/download/latest.json
 ```
 
 If the GitHub repository owner/name is different, update `src-tauri/tauri.conf.json` before publishing.
