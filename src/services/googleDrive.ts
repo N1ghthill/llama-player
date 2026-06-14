@@ -4,8 +4,8 @@
  * Serviço para autenticação OAuth 2.0, listagem de arquivos e streaming
  * de áudio do Google Drive.
  *
- * Usa Google Identity Services (GIS) para OAuth com PKCE.
- * Em ambiente Tauri, usará @tauri-apps/api para armazenamento seguro.
+ * No Tauri, usa OAuth 2.0 para apps instalados: navegador externo,
+ * callback em loopback e PKCE. No navegador, mantém fallback via GIS popup.
  */
 
 import {
@@ -21,8 +21,37 @@ const SCOPES = [
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 
-const DISCOVERY_DOC =
-  "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest";
+const GOOGLE_CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || "";
+const TOKEN_REFRESH_SKEW_MS = 60 * 1000;
+const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function randomBase64Url(byteLength = 64): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+async function createCodeChallenge(verifier: string): Promise<string> {
+  const bytes = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return base64UrlEncode(new Uint8Array(digest));
+}
 
 // Tipos de áudio suportados para filtrar no Drive
 const AUDIO_MIME_TYPES = new Set([
@@ -111,6 +140,29 @@ interface CacheEntry {
   folderId: string | null;
 }
 
+interface StoredDriveAuth {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  scope?: string;
+  tokenType?: string;
+}
+
+interface NativeOAuthResult {
+  code: string;
+  redirect_uri: string;
+}
+
+interface GoogleTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
 /** Informações de uma playlist sincronizada com uma pasta do Drive */
 export interface SyncedPlaylist {
   folderId: string;
@@ -138,6 +190,9 @@ export function isAudioFile(item: DriveItem): item is DriveFile {
  */
 export class GoogleDriveService {
   private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+  private expiresAt: number | null = null;
+  private clientId: string | null = null;
   private tokenClient: any = null;
   private gisLoaded: boolean = false;
 
@@ -146,7 +201,9 @@ export class GoogleDriveService {
   private cacheConfig: DriveCacheConfig = { ...DEFAULT_CACHE_CONFIG };
 
   constructor() {
-    this.loadGisApi();
+    if (!isTauriRuntime()) {
+      this.loadGisApi();
+    }
   }
 
   /**
@@ -238,40 +295,16 @@ export class GoogleDriveService {
   }
 
   /**
-   * Carrega a API Discovery do Google Drive.
-   */
-  private async loadDriveApi(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (typeof gapi !== "undefined" && gapi.client) {
-        resolve();
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = "https://apis.google.com/js/api.js";
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        (gapi as any).load("client", async () => {
-          try {
-            await (gapi as any).client.init({});
-            await (gapi as any).client.load(DISCOVERY_DOC);
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        });
-      };
-      script.onerror = () => reject(new Error("Erro ao carregar Google API"));
-      document.head.appendChild(script);
-    });
-  }
-
-  /**
    * Inicializa o TokenClient com o Client ID.
    * Deve ser chamado após o usuário interagir (clicar em "Login").
    */
   async initialize(clientId: string): Promise<void> {
+    this.clientId = clientId;
+
+    if (isTauriRuntime()) {
+      return;
+    }
+
     // Aguarda GIS carregar
     while (!this.gisLoaded) {
       await new Promise((r) => setTimeout(r, 100));
@@ -282,14 +315,12 @@ export class GoogleDriveService {
       scope: SCOPES,
       callback: (response: any) => {
         if (response.access_token) {
-          this.accessToken = response.access_token;
-          void this.storeToken(response.access_token);
+          const auth = this.authFromTokenResponse(response);
+          this.applyAuth(auth);
+          void this.storeAuth(auth);
         }
       },
     });
-
-    // Carrega Drive API
-    await this.loadDriveApi();
   }
 
   /**
@@ -297,6 +328,10 @@ export class GoogleDriveService {
    * Retorna true se autenticou com sucesso.
    */
   async login(): Promise<boolean> {
+    if (isTauriRuntime()) {
+      return this.loginWithNativeBrowser();
+    }
+
     if (!this.tokenClient) {
       throw new Error(
         "TokenClient não inicializado. Chame initialize(clientId) primeiro."
@@ -306,8 +341,9 @@ export class GoogleDriveService {
     return new Promise((resolve) => {
       this.tokenClient!.callback = async (response: any) => {
         if (response.access_token) {
-          this.accessToken = response.access_token;
-          await this.storeToken(response.access_token);
+          const auth = this.authFromTokenResponse(response);
+          this.applyAuth(auth);
+          await this.storeAuth(auth);
           resolve(true);
         } else {
           console.error("[Llama Player] Erro no OAuth:", response.error);
@@ -321,21 +357,57 @@ export class GoogleDriveService {
   }
 
   /**
+   * Fluxo OAuth nativo: navegador externo + callback local + PKCE.
+   */
+  private async loginWithNativeBrowser(): Promise<boolean> {
+    if (!this.clientId) {
+      throw new Error("Client ID do Google não configurado");
+    }
+
+    const { invoke } = await import("@tauri-apps/api/core");
+    const codeVerifier = randomBase64Url(64);
+    const codeChallenge = await createCodeChallenge(codeVerifier);
+    const state = randomBase64Url(32);
+
+    const authResult = await invoke<NativeOAuthResult>("google_oauth_authorize", {
+      clientId: this.clientId,
+      scope: SCOPES,
+      codeChallenge,
+      state,
+    });
+
+    const tokenResponse = await this.exchangeAuthorizationCode(
+      authResult.code,
+      codeVerifier,
+      authResult.redirect_uri
+    );
+    const auth = this.authFromTokenResponse(tokenResponse);
+    this.applyAuth(auth);
+    await this.storeAuth(auth);
+    return true;
+  }
+
+  /**
    * Tenta fazer login silencioso com token existente.
    */
   async trySilentLogin(clientId: string): Promise<boolean> {
-    const storedToken = await this.getStoredToken();
-    if (!storedToken) return false;
-
-    this.accessToken = storedToken;
-
     try {
       await this.initialize(clientId);
+
+      const storedAuth = await this.getStoredAuth();
+      if (!storedAuth) return false;
+
+      this.applyAuth(storedAuth);
+
+      if (this.shouldRefreshToken() && this.refreshToken) {
+        await this.refreshAccessToken();
+      }
+
       // Verifica se o token ainda é válido
       const user = await this.getUserInfo();
       return !!user;
     } catch {
-      this.accessToken = null;
+      this.clearInMemoryAuth();
       await this.clearToken();
       return false;
     }
@@ -347,26 +419,155 @@ export class GoogleDriveService {
   async logout(): Promise<void> {
     if (this.accessToken) {
       try {
-        (google as any).accounts.oauth2.revoke(this.accessToken, () => {});
+        if (!isTauriRuntime() && typeof google !== "undefined") {
+          (google as any).accounts.oauth2.revoke(this.accessToken, () => {});
+        } else {
+          await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(this.accessToken)}`, {
+            method: "POST",
+          });
+        }
       } catch {
         // Ignora erro no revoke
       }
     }
-    this.accessToken = null;
+    this.clearInMemoryAuth();
     await this.clearToken();
+  }
+
+  private authFromTokenResponse(response: GoogleTokenResponse): StoredDriveAuth {
+    if (!response.access_token) {
+      throw new Error(
+        response.error_description ||
+          response.error ||
+          "Resposta OAuth sem access token"
+      );
+    }
+
+    return {
+      accessToken: response.access_token,
+      refreshToken: response.refresh_token ?? this.refreshToken ?? undefined,
+      expiresAt: response.expires_in
+        ? Date.now() + response.expires_in * 1000
+        : undefined,
+      scope: response.scope,
+      tokenType: response.token_type,
+    };
+  }
+
+  private applyAuth(auth: StoredDriveAuth): void {
+    this.accessToken = auth.accessToken;
+    this.refreshToken = auth.refreshToken ?? null;
+    this.expiresAt = auth.expiresAt ?? null;
+  }
+
+  private clearInMemoryAuth(): void {
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.expiresAt = null;
+  }
+
+  private shouldRefreshToken(): boolean {
+    return !!this.expiresAt && Date.now() + TOKEN_REFRESH_SKEW_MS >= this.expiresAt;
+  }
+
+  private async exchangeAuthorizationCode(
+    code: string,
+    codeVerifier: string,
+    redirectUri: string
+  ): Promise<GoogleTokenResponse> {
+    if (!this.clientId) throw new Error("Client ID do Google não configurado");
+
+    const body = new URLSearchParams({
+      client_id: this.clientId,
+      code,
+      code_verifier: codeVerifier,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+    });
+
+    if (GOOGLE_CLIENT_SECRET) {
+      body.set("client_secret", GOOGLE_CLIENT_SECRET);
+    }
+
+    return this.postTokenRequest(body);
+  }
+
+  private async refreshAccessToken(): Promise<void> {
+    if (!this.clientId || !this.refreshToken) {
+      throw new Error("Refresh token do Google não disponível");
+    }
+
+    const body = new URLSearchParams({
+      client_id: this.clientId,
+      refresh_token: this.refreshToken,
+      grant_type: "refresh_token",
+    });
+
+    if (GOOGLE_CLIENT_SECRET) {
+      body.set("client_secret", GOOGLE_CLIENT_SECRET);
+    }
+
+    const response = await this.postTokenRequest(body);
+    const auth = this.authFromTokenResponse(response);
+    this.applyAuth(auth);
+    await this.storeAuth(auth);
+  }
+
+  private async postTokenRequest(body: URLSearchParams): Promise<GoogleTokenResponse> {
+    if (isTauriRuntime()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<GoogleTokenResponse>("google_oauth_token_request", {
+        params: Object.fromEntries(body.entries()),
+      });
+    }
+
+    const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+    const data = (await response.json()) as GoogleTokenResponse;
+
+    if (!response.ok) {
+      throw new Error(
+        data.error_description ||
+          data.error ||
+          `Erro OAuth do Google: ${response.status}`
+      );
+    }
+
+    return data;
+  }
+
+  private async ensureAccessToken(): Promise<string> {
+    if (!this.accessToken) throw new Error("Não autenticado");
+
+    if (this.shouldRefreshToken()) {
+      if (this.refreshToken) {
+        await this.refreshAccessToken();
+      } else {
+        this.clearInMemoryAuth();
+        await this.clearToken();
+        throw new Error("Sessão Google expirada. Faça login novamente.");
+      }
+    }
+
+    if (!this.accessToken) throw new Error("Não autenticado");
+    return this.accessToken;
   }
 
   /**
    * Retorna informações do usuário autenticado.
    */
   async getUserInfo(): Promise<DriveUser | null> {
-    if (!this.accessToken) return null;
-
     try {
+      const accessToken = await this.ensureAccessToken();
       const response = await fetch(
         "https://www.googleapis.com/oauth2/v2/userinfo",
         {
-          headers: { Authorization: `Bearer ${this.accessToken}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         }
       );
       if (!response.ok) return null;
@@ -390,7 +591,7 @@ export class GoogleDriveService {
     folderId: string | null = null,
     bypassCache: boolean = false
   ): Promise<DriveItem[]> {
-    if (!this.accessToken) throw new Error("Não autenticado");
+    const accessToken = await this.ensureAccessToken();
 
     // Verifica cache primeiro
     if (!bypassCache) {
@@ -413,18 +614,32 @@ export class GoogleDriveService {
       let pageToken: string | undefined;
 
       do {
-        const response = await (gapi as any).client.drive.files.list({
+        const params = new URLSearchParams({
           q: query,
           fields,
           orderBy: "folder,name",
-          pageSize: 100,
-          pageToken,
-          includeItemsFromAllDrives: false,
-          supportsAllDrives: false,
+          pageSize: "100",
+          includeItemsFromAllDrives: "false",
+          supportsAllDrives: "false",
         });
+        if (pageToken) params.set("pageToken", pageToken);
 
-        files.push(...(response.result.files || []));
-        pageToken = response.result.nextPageToken;
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(
+            data?.error?.message ||
+              `Erro ao listar arquivos do Drive: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+        files.push(...(data.files || []));
+        pageToken = data.nextPageToken;
       } while (pageToken);
 
       const items: DriveItem[] = files.map((file: any) => ({
@@ -444,9 +659,7 @@ export class GoogleDriveService {
       return items;
     } catch (err: any) {
       console.error("[Llama Player] Erro ao listar arquivos:", err);
-      throw new Error(
-        err?.result?.error?.message || "Erro ao listar arquivos do Drive"
-      );
+      throw new Error(err?.message || "Erro ao listar arquivos do Drive");
     }
   }
 
@@ -454,7 +667,7 @@ export class GoogleDriveService {
    * Busca arquivos de áudio no Drive por nome.
    */
   async searchAudio(query: string): Promise<DriveFile[]> {
-    if (!this.accessToken) throw new Error("Não autenticado");
+    const accessToken = await this.ensureAccessToken();
 
     const mimeFilter = Array.from(AUDIO_MIME_TYPES)
       .map((m) => `mimeType = '${m}'`)
@@ -469,16 +682,30 @@ export class GoogleDriveService {
       let pageToken: string | undefined;
 
       do {
-        const response = await (gapi as any).client.drive.files.list({
+        const params = new URLSearchParams({
           q,
           fields,
           orderBy: "name",
-          pageSize: 100,
-          pageToken,
+          pageSize: "100",
         });
+        if (pageToken) params.set("pageToken", pageToken);
 
-        files.push(...(response.result.files || []));
-        pageToken = response.result.nextPageToken;
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(
+            data?.error?.message ||
+              `Erro ao buscar no Drive: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+        files.push(...(data.files || []));
+        pageToken = data.nextPageToken;
       } while (pageToken);
 
       return files.map((file: any) => ({
@@ -493,9 +720,7 @@ export class GoogleDriveService {
       }));
     } catch (err: any) {
       console.error("[Llama Player] Erro na busca:", err);
-      throw new Error(
-        err?.result?.error?.message || "Erro ao buscar no Drive"
-      );
+      throw new Error(err?.message || "Erro ao buscar no Drive");
     }
   }
 
@@ -504,7 +729,7 @@ export class GoogleDriveService {
    * Usa exportLinks para arquivos do Google Docs ou download para binários.
    */
   async getDownloadUrl(fileId: string, _mimeType: string): Promise<string> {
-    if (!this.accessToken) throw new Error("Não autenticado");
+    await this.ensureAccessToken();
 
     // Para arquivos de áudio, usa o download direto
     return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
@@ -531,11 +756,11 @@ export class GoogleDriveService {
     fileId: string,
     options?: { start?: number; end?: number }
   ): Promise<Response> {
-    if (!this.accessToken) throw new Error("Não autenticado");
+    const accessToken = await this.ensureAccessToken();
 
     const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
     };
 
     if (options?.start !== undefined || options?.end !== undefined) {
@@ -560,11 +785,11 @@ export class GoogleDriveService {
    * Útil para verificar tamanho antes de iniciar streaming.
    */
   async getFileMetadata(fileId: string): Promise<DriveFile> {
-    if (!this.accessToken) throw new Error("Não autenticado");
+    const accessToken = await this.ensureAccessToken();
 
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,size,modifiedTime`,
-      { headers: { Authorization: `Bearer ${this.accessToken}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
     if (!response.ok) {
@@ -587,11 +812,11 @@ export class GoogleDriveService {
    * Verifica se o token atual é válido fazendo uma requisição leve.
    */
   async validateToken(): Promise<boolean> {
-    if (!this.accessToken) return false;
     try {
+      const accessToken = await this.ensureAccessToken();
       const response = await fetch(
         "https://www.googleapis.com/drive/v3/about?fields=user",
-        { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       return response.ok;
     } catch {
@@ -681,17 +906,27 @@ export class GoogleDriveService {
 
   // --- Gerenciamento de Token ---
 
-  private async storeToken(token: string): Promise<void> {
+  private async storeAuth(auth: StoredDriveAuth): Promise<void> {
     try {
-      await storeDriveToken(token);
+      await storeDriveToken(JSON.stringify(auth));
     } catch (err) {
       console.warn("[Llama Player] Erro ao salvar token:", err);
     }
   }
 
-  private async getStoredToken(): Promise<string | null> {
+  private async getStoredAuth(): Promise<StoredDriveAuth | null> {
     try {
-      return await getStoredDriveToken();
+      const stored = await getStoredDriveToken();
+      if (!stored) return null;
+
+      try {
+        const parsed = JSON.parse(stored) as StoredDriveAuth;
+        if (parsed.accessToken) return parsed;
+      } catch {
+        // Formato legado: o valor salvo era apenas o access token.
+      }
+
+      return { accessToken: stored };
     } catch (err) {
       console.warn("[Llama Player] Erro ao carregar token salvo:", err);
       return null;

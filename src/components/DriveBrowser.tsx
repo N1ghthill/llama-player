@@ -213,8 +213,10 @@ export function DriveBrowser({ onAddTracks, disabled = false }: DriveBrowserProp
             >
               Google Cloud Console
             </a>
-            , ative a Google Drive API e configure o redirect URI para
-            seu domínio (ex: http://localhost:1420).
+            , ative a Google Drive API e crie um OAuth Client ID do tipo
+            Desktop app para o aplicativo Tauri. Para usar só no navegador
+            com Vite, use um client de Aplicativo Web com
+            http://localhost:1420 como origem autorizada.
           </p>
         </div>
       </div>

@@ -17,7 +17,9 @@ declare namespace google.accounts.oauth2 {
     access_token?: string;
     error?: string;
     error_description?: string;
+    expires_in?: number;
     scope?: string;
+    token_type?: string;
   }
 
   interface TokenClient {
@@ -147,6 +149,7 @@ declare namespace gapi {
 interface ImportMeta {
   readonly env: {
     readonly VITE_GOOGLE_CLIENT_ID?: string;
+    readonly VITE_GOOGLE_CLIENT_SECRET?: string;
     readonly [key: string]: string | undefined;
   };
 }
