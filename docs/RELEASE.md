@@ -39,6 +39,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+The workflow creates a draft release. Publish the draft after all matrix jobs finish
+so `latest.json` is available to the updater endpoint.
+
 The updater endpoint is configured for:
 
 ```text

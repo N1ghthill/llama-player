@@ -105,8 +105,8 @@
 
 ### 4.3 Build e Distribuição
 - [x] Build para Linux (.deb, .AppImage)
-- [ ] Build para Windows (.msi, portable)
-- [ ] Build para macOS (.dmg)
+- [x] Build para Windows (.msi, setup .exe via GitHub Actions)
+- [x] Build para macOS (.dmg para x64/aarch64 via GitHub Actions)
 - [x] Auto-update com Tauri Updater e artefatos assinados
 
 ---
