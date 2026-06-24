@@ -19,8 +19,8 @@ export function useAudioVisualizer(
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const rafRef = useRef<number | null>(null);
-  const freqBufRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(FFT_SIZE / 2));
-  const waveBufRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(FFT_SIZE));
+  const freqBufRef = useRef<Uint8Array>(new Uint8Array(FFT_SIZE / 2));
+  const waveBufRef = useRef<Uint8Array>(new Uint8Array(FFT_SIZE));
 
   const cleanup = useCallback(() => {
     if (rafRef.current !== null) {
@@ -60,6 +60,9 @@ export function useAudioVisualizer(
       }
 
       const ctx = new AudioCtx();
+      ctx.resume().catch((e) =>
+        console.warn("[Llama Player] AudioContext resume error:", e)
+      );
       const analyser = ctx.createAnalyser();
       analyser.fftSize = FFT_SIZE;
       analyser.smoothingTimeConstant = SMOOTHING;
@@ -74,15 +77,16 @@ export function useAudioVisualizer(
 
       setIsVisualizerActive(true);
 
-      const freqBuf = freqBufRef.current;
-      const waveBuf = waveBufRef.current;
-
       const tick = () => {
         if (analyserRef.current) {
-          analyserRef.current.getByteFrequencyData(freqBuf);
-          analyserRef.current.getByteTimeDomainData(waveBuf);
-          setFrequencyData(Array.from(freqBuf));
-          setWaveformData(Array.from(waveBuf));
+          const freqArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+          const waveArray = new Uint8Array(analyserRef.current.fftSize);
+          analyserRef.current.getByteFrequencyData(freqArray);
+          analyserRef.current.getByteTimeDomainData(waveArray);
+          freqBufRef.current = freqArray;
+          waveBufRef.current = waveArray;
+          setFrequencyData(Array.from(freqArray));
+          setWaveformData(Array.from(waveArray));
         }
         rafRef.current = requestAnimationFrame(tick);
       };

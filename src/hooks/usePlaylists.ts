@@ -71,7 +71,7 @@ export function usePlaylists() {
           };
           updated = [...prev, newPlaylist];
           // Auto-select the new playlist
-          setTimeout(() => setActivePlaylistId(newPlaylist.id), 0);
+          setActivePlaylistId(newPlaylist.id);
         }
 
         savePlaylistsToStorage(updated);

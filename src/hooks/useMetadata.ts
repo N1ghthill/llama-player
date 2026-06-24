@@ -91,11 +91,13 @@ export function useMetadata() {
       onProgress?: (progress: { processed: number; total: number }) => void
     ): Promise<Track[]> => {
       const tracks: Track[] = [];
+      const objectUrls: string[] = [];
       const now = Date.now();
 
       const processOne = async (i: number): Promise<Track> => {
         const file = files[i];
         const url = URL.createObjectURL(file);
+        objectUrls.push(url);
         const metadata = await extractMetadata(file);
 
         return {
@@ -130,6 +132,15 @@ export function useMetadata() {
 
         onProgress?.({ processed: Math.min(i + BATCH_SIZE, files.length), total: files.length });
       }
+
+      // Revoga URLs temporárias — o áudio já foi carregado no estado do player
+      // Nota: as URLs ainda podem estar sendo usadas pelo elemento <audio>,
+      // então só revogamos após um pequeno delay para garantir que o áudio carregou
+      setTimeout(() => {
+        for (const url of objectUrls) {
+          URL.revokeObjectURL(url);
+        }
+      }, 5000);
 
       return tracks;
     },

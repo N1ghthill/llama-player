@@ -13,7 +13,6 @@ import {
   PlayerControls,
   ProgressBar,
   StatusBar,
-  DriveBrowser,
   AudioVisualizer,
   HistoryPanel,
   PlaylistManager,
@@ -73,15 +72,17 @@ function App() {
   const history = useHistory();
   const playlists = usePlaylists();
   const { theme, cycleTheme } = useTheme();
+  const visualizer = useAudioVisualizer(audioRef, state.isPlaying);
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ processed: number; total: number } | null>(null);
-  const [showDrive, setShowDrive] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showPlaylistManager, setShowPlaylistManager] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentTrackRef = useRef(state.currentTrack);
+  currentTrackRef.current = state.currentTrack;
 
   // Carrega favoritos salvos ao iniciar
   useEffect(() => {
@@ -172,8 +173,6 @@ function App() {
     };
   }, [tauriState.isTauri]);
 
-  const visualizer = useAudioVisualizer(audioRef, state.isPlaying);
-
   const handleSelectTrack = (track: Track) => {
     play(track);
   };
@@ -225,13 +224,13 @@ function App() {
             })
           : [];
         const tracks = markFavoriteTracks(processedTracks);
-        tracks.push(...fallbackTracks);
+        const allTracks = [...tracks, ...markFavoriteTracks(fallbackTracks)];
 
-        for (const track of tracks) {
+        for (const track of allTracks) {
           addTrack(track);
         }
 
-        if (!state.currentTrack && tracks.length > 0) {
+        if (!currentTrackRef.current && tracks.length > 0) {
           play(tracks[0]);
         }
       } catch (err) {
@@ -265,7 +264,7 @@ function App() {
         }
 
         // If nothing is playing, start with the first track
-        if (!state.currentTrack && tracks.length > 0) {
+        if (!currentTrackRef.current && tracks.length > 0) {
           play(tracks[0]);
         }
       } catch (err) {
@@ -278,7 +277,7 @@ function App() {
       // Reset input so the same file can be selected again
       e.target.value = "";
     },
-    [processFiles, markFavoriteTracks, addTrack, state.currentTrack, play]
+    [processFiles, markFavoriteTracks, addTrack, play]
   );
 
   const handleDropFiles = useCallback(
@@ -294,7 +293,7 @@ function App() {
         for (const track of tracks) {
           addTrack(track);
         }
-        if (!state.currentTrack && tracks.length > 0) {
+        if (!currentTrackRef.current && tracks.length > 0) {
           play(tracks[0]);
         }
       } catch (err) {
@@ -304,20 +303,7 @@ function App() {
         setLoadingProgress(null);
       }
     },
-    [processFiles, markFavoriteTracks, addTrack, state.currentTrack, play]
-  );
-
-  const handleAddDriveTracks = useCallback(
-    (tracks: Track[]) => {
-      const tracksWithFavorites = markFavoriteTracks(tracks);
-      for (const track of tracksWithFavorites) {
-        addTrack(track);
-      }
-      if (!state.currentTrack && tracksWithFavorites.length > 0) {
-        play(tracksWithFavorites[0]);
-      }
-    },
-    [markFavoriteTracks, addTrack, state.currentTrack, play]
+    [processFiles, markFavoriteTracks, addTrack, play]
   );
 
   const handleToggleFavorite = useCallback(
@@ -328,11 +314,90 @@ function App() {
     [toggleStoredFavorite, togglePlayerFavorite]
   );
 
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+
+      switch (event.key) {
+        case " ":
+          event.preventDefault();
+          state.isPlaying ? pause() : play();
+          break;
+        case "ArrowLeft":
+          event.preventDefault();
+          seek(Math.max(0, state.currentTime - 5));
+          break;
+        case "ArrowRight":
+          event.preventDefault();
+          seek(Math.min(state.duration, state.currentTime + 5));
+          break;
+        case "ArrowUp":
+        case "+":
+        case "=":
+          event.preventDefault();
+          setVolume(Math.min(100, state.volume + 5));
+          break;
+        case "ArrowDown":
+        case "-":
+          event.preventDefault();
+          setVolume(Math.max(0, state.volume - 5));
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [state.isPlaying, state.currentTime, state.duration, state.volume, play, pause, seek, setVolume]);
+
   return (
     <div className="app">
       <TitleBar />
 
       <main className="main-content">
+        <section className="deck-panel">
+          <div className="deck-visual">
+            <AudioVisualizer
+              frequencyData={visualizer.frequencyData}
+              waveformData={visualizer.waveformData}
+              isActive={visualizer.isActive}
+            />
+          </div>
+
+          <div className="deck-now">
+            <PlayerControls
+              currentTrack={state.currentTrack}
+              currentTrackId={state.currentTrack?.id ?? null}
+              isPlaying={state.isPlaying}
+              isShuffled={state.isShuffled}
+              repeatMode={state.repeatMode}
+              isCompact={isCompact}
+              onPlay={() => play()}
+              onPause={pause}
+              onNext={next}
+              onPrev={prev}
+              onToggleShuffle={toggleShuffle}
+              onRepeatModeChange={setRepeatMode}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleCompact={() => setIsCompact((v) => !v)}
+            />
+
+            <ProgressBar
+              currentTime={state.currentTime}
+              duration={state.duration}
+              onSeek={seek}
+            />
+          </div>
+        </section>
+
         <div className="toolbar">
           <button
             className="toolbar-btn"
@@ -354,13 +419,6 @@ function App() {
             style={{ display: "none" }}
             onChange={handleFileChange}
           />
-          <button
-            className={`toolbar-btn ${showDrive ? "toolbar-btn-active" : ""}`}
-            onClick={() => setShowDrive((v) => !v)}
-            title="Google Drive"
-          >
-            ☁️ Drive
-          </button>
           <button
             className={`toolbar-btn ${showHistory ? "toolbar-btn-active" : ""}`}
             onClick={() => setShowHistory((v) => !v)}
@@ -384,83 +442,52 @@ function App() {
           </button>
         </div>
 
-        {showDrive && (
-          <DriveBrowser onAddTracks={handleAddDriveTracks} />
-        )}
-
-        {showHistory && (
-          <HistoryPanel
-            entries={history.entries}
+        <section className="library-layout">
+          <Playlist
+            tracks={state.playlist}
+            currentTrackId={state.currentTrack?.id ?? null}
+            isPlaying={state.isPlaying}
             onSelectTrack={handleSelectTrack}
-            onClear={history.clear}
+            onReorderPlaylist={reorderPlaylist}
+            onDropFiles={handleDropFiles}
+            onToggleFavorite={handleToggleFavorite}
           />
-        )}
 
-        {showPlaylistManager && (
-          <PlaylistManager
-            playlists={playlists.playlists}
-            activePlaylistId={playlists.activePlaylistId}
-            currentTracks={state.playlist}
-            onSavePlaylist={playlists.saveCurrentPlaylist}
-            onLoadPlaylist={playlists.loadPlaylist}
-            onDeletePlaylist={playlists.deletePlaylist}
-            onRenamePlaylist={playlists.renamePlaylist}
-            onReplaceTracks={(tracks) => {
-              // Replace entire playlist
-              // First clear by reordering to empty, then add tracks
-              // We use a workaround: reorder to empty then add each track
-              // Actually, let's just load the tracks into the playlist
-              // by reordering to the saved tracks
-              if (tracks.length === 0) return;
-              // We need to replace the playlist. Since we have reorderPlaylist,
-              // we can set the playlist to the loaded tracks directly.
-              // The cleanest approach: reorder to the loaded tracks.
-              reorderPlaylist(tracks);
-              // Start playing the first track
-              play(tracks[0]);
-            }}
-            onClose={() => setShowPlaylistManager(false)}
-          />
-        )}
+          <aside className="side-panels">
+            {showHistory && (
+              <HistoryPanel
+                entries={history.entries}
+                onSelectTrack={handleSelectTrack}
+                onClear={history.clear}
+              />
+            )}
 
-        <Playlist
-          tracks={state.playlist}
-          currentTrackId={state.currentTrack?.id ?? null}
-          isPlaying={state.isPlaying}
-          onSelectTrack={handleSelectTrack}
-          onReorderPlaylist={reorderPlaylist}
-          onDropFiles={handleDropFiles}
-          onToggleFavorite={handleToggleFavorite}
-        />
+            {showPlaylistManager && (
+              <PlaylistManager
+                playlists={playlists.playlists}
+                activePlaylistId={playlists.activePlaylistId}
+                currentTracks={state.playlist}
+                onSavePlaylist={playlists.saveCurrentPlaylist}
+                onLoadPlaylist={playlists.loadPlaylist}
+                onDeletePlaylist={playlists.deletePlaylist}
+                onRenamePlaylist={playlists.renamePlaylist}
+                onReplaceTracks={(tracks) => {
+                  if (tracks.length === 0) return;
+                  reorderPlaylist(tracks);
+                  play(tracks[0]);
+                }}
+                onClose={() => setShowPlaylistManager(false)}
+              />
+            )}
 
-        <PlayerControls
-          currentTrack={state.currentTrack}
-          currentTrackId={state.currentTrack?.id ?? null}
-          isPlaying={state.isPlaying}
-          isShuffled={state.isShuffled}
-          repeatMode={state.repeatMode}
-          isCompact={isCompact}
-          onPlay={() => play()}
-          onPause={pause}
-          onNext={next}
-          onPrev={prev}
-          onToggleShuffle={toggleShuffle}
-          onRepeatModeChange={setRepeatMode}
-          onToggleFavorite={handleToggleFavorite}
-          onToggleCompact={() => setIsCompact((v) => !v)}
-        />
-
-        <AudioVisualizer
-          frequencyData={visualizer.frequencyData}
-          waveformData={visualizer.waveformData}
-          isActive={visualizer.isActive}
-        />
-
-        <ProgressBar
-          currentTime={state.currentTime}
-          duration={state.duration}
-          onSeek={seek}
-        />
+            {!showHistory && !showPlaylistManager && (
+              <div className="library-empty-panel">
+                <span className="library-empty-title">Biblioteca local</span>
+                <span>Arraste músicas para a lista ou abra arquivos do computador.</span>
+              </div>
+            )}
+          </aside>
+        </section>
       </main>
 
       <StatusBar

@@ -1,41 +1,51 @@
+import { useState, useCallback } from "react";
+
 const STORAGE_KEY = "llama-player-favorites";
 
+function loadFavoritesFromStorage(): string[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+function saveFavoritesToStorage(ids: string[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  } catch (err) {
+    console.error("[Llama Player] Erro ao salvar favoritos:", err);
+  }
+}
+
 export function useFavorites() {
-  function loadFavorites(): string[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return [];
-      const parsed = JSON.parse(stored);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((id): id is string => typeof id === "string");
-    } catch {
-      return [];
-    }
-  }
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(loadFavoritesFromStorage);
 
-  function saveFavorites(ids: string[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
-    } catch (err) {
-      console.error("[Llama Player] Erro ao salvar favoritos:", err);
-    }
-  }
+  const loadFavorites = useCallback((): string[] => {
+    const ids = loadFavoritesFromStorage();
+    setFavoriteIds(ids);
+    return ids;
+  }, []);
 
-  function toggleFavorite(trackId: string): string[] {
-    const current = loadFavorites();
+  const toggleFavorite = useCallback((trackId: string): string[] => {
+    const current = loadFavoritesFromStorage();
     const index = current.indexOf(trackId);
     const updated =
       index === -1
         ? [...current, trackId]
         : current.filter((id) => id !== trackId);
-    saveFavorites(updated);
+    saveFavoritesToStorage(updated);
+    setFavoriteIds(updated);
     return updated;
-  }
+  }, []);
 
-  function isFavorite(trackId: string): boolean {
-    const current = loadFavorites();
-    return current.includes(trackId);
-  }
+  const isFavorite = useCallback((trackId: string): boolean => {
+    return favoriteIds.includes(trackId);
+  }, [favoriteIds]);
 
-  return { favoriteIds: loadFavorites(), toggleFavorite, isFavorite, loadFavorites };
+  return { favoriteIds, toggleFavorite, isFavorite, loadFavorites };
 }

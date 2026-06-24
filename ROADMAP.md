@@ -1,6 +1,6 @@
 # 🦙 Llama Player — Roadmap de Desenvolvimento
 
-> Player de música nostálgico inspirado no Winamp, conectado ao Google Drive.
+> Player de música local inspirado em players desktop clássicos.
 > Stack: React 18 + TypeScript + Vite + Tauri
 
 ---
@@ -60,30 +60,20 @@
 
 ---
 
-## Fase 3 — Google Drive Integration ☁️
+## Fase 3 — Biblioteca Local 🗂️
 
-### 3.1 Autenticação
-- [x] Integração com Google OAuth 2.0 (Google Identity Services)
-- [x] Login com conta Google (popup OAuth)
-- [x] Armazenamento do token no Tauri Stronghold (fallback localStorage no navegador)
-- [x] Login silencioso (restaura sessão automaticamente)
-- [x] Logout com revogação de token
+### 3.1 Importação Local
+- [x] Abrir múltiplos arquivos pelo seletor nativo
+- [x] Arrastar e soltar arquivos na playlist
+- [x] Cache local de áudio para reabertura mais rápida
+- [ ] Importar pastas inteiras com varredura recursiva
 
-### 3.2 Navegação no Drive
-- [x] Listar arquivos de áudio do Google Drive (filtro por MIME type + extensão)
-- [x] Navegação por pastas com breadcrumbs clicáveis
-- [x] Cache de lista de arquivos (TTL configurável, 5 min padrão, max 50 entradas)
-- [x] Sincronização de playlist com pastas do Drive (salva/restaura)
-- [x] Busca textual de músicas no Drive
-- [x] Seleção múltipla de arquivos com checkbox
-- [x] Botão "Recarregar" para bypass do cache
-
-### 3.3 Streaming
-- [x] Streaming de áudio do Google Drive sem token em query string
-- [x] URLs de download direto (alt=media)
-- [x] Buffer progressivo via Range requests integrado ao player (MediaSource + fallback)
-- [x] Método `streamFile()` com suporte a byte ranges
-- [x] Método `getFileMetadata()` para obter tamanho antes do streaming
+### 3.2 Organização
+- [x] Pesquisa textual por nome/artista
+- [x] Ordenação por nome, artista e duração
+- [x] Playlists salvas localmente
+- [x] Favoritos locais
+- [ ] Filtros por artista/álbum
 
 ---
 
@@ -92,7 +82,7 @@
 ### 4.1 Configuração Tauri
 - [x] Inicializar `src-tauri/` com configuração básica
 - [x] Ícone e identidade visual do app (ícones gerados)
-- [x] Configurar permissões (Google Drive via CSP, sistema de arquivos local, diálogos)
+- [x] Configurar permissões para sistema de arquivos local, diálogos e notificações
 - [x] Plugins Tauri configurados: dialog, fs, shell, notification, global-shortcut, log
 - [x] Comandos nativos: `get_music_dir`, `get_system_info`
 
@@ -143,10 +133,9 @@
 - [ ] Gapless playback
 - [ ] Controle remoto via HTTP (como o Winamp)
 
-### 6.2 Integrações
+### 6.2 Integrações Opcionais
 - [ ] Last.fm scrobbling
 - [ ] YouTube Music / Spotify import
-- [ ] Download de músicas do Drive para cache offline
 
 ---
 
@@ -156,7 +145,7 @@
 |-------|----------|----------|
 | **M1** | Fase 1 | Componentes modulares, estado do player, tema visual |
 | **M2** | Fase 2 | Player funcional com áudio real e playlist |
-| **M3** | Fase 3 | Google Drive conectado, streaming funcional |
+| **M3** | Fase 3 | Biblioteca local organizada |
 | **M4** | Fase 4 | App desktop com Tauri, builds para 3 SOs |
 | **M5** | Fase 5 | UI polida, visualizações, performance |
 | **M6** | Fase 6 | Recursos avançados e integrações |
@@ -180,4 +169,4 @@ npm run tauri dev
 npm run tauri build
 ```
 
-> **Status atual:** Fases 1-4 concluídas. Fase 5 — Visual, Qualidade de Vida, Temas e Performance concluídos. Próximo passo: Fase 6 — Recursos avançados (podcasts, letras sincronizadas, crossfade, gapless, Last.fm, etc.) ou builds para distribuição (Fase 4.3).
+> **Status atual:** Fases 1-5 concluídas para uso local. Próximo passo: Fase 6 — recursos avançados (podcasts, letras sincronizadas, crossfade, gapless, Last.fm, etc.) ou importação recursiva de pastas.

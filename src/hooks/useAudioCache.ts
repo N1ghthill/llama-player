@@ -21,6 +21,14 @@ const DEFAULT_MAX_SIZE = 200 * 1024 * 1024; // 200MB
 
 let dbInstance: IDBDatabase | null = null;
 
+function awaitTransaction(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(new Error("Transaction aborted"));
+  });
+}
+
 function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return Promise.resolve(dbInstance);
 
@@ -93,6 +101,8 @@ async function evictOldest(requiredSpace: number): Promise<void> {
       metaStore.delete(meta.key);
       freed += meta.size;
     }
+
+    await awaitTransaction(tx);
   } catch (err) {
     console.warn("[Llama Player] Error evicting cache:", err);
   }
@@ -131,6 +141,8 @@ export async function cacheAudioBlob(
       mimeType: blob.type || "audio/mpeg",
     };
     metaStore.put(meta);
+
+    await awaitTransaction(tx);
   } catch (err) {
     console.warn("[Llama Player] Error caching audio:", err);
   }
@@ -180,6 +192,7 @@ export async function removeCachedAudio(key: string): Promise<void> {
     const tx = db.transaction([STORE_NAME, META_STORE], "readwrite");
     tx.objectStore(STORE_NAME).delete(key);
     tx.objectStore(META_STORE).delete(key);
+    await awaitTransaction(tx);
   } catch {
     // ignore
   }
@@ -191,6 +204,7 @@ export async function clearAudioCache(): Promise<void> {
     const tx = db.transaction([STORE_NAME, META_STORE], "readwrite");
     tx.objectStore(STORE_NAME).clear();
     tx.objectStore(META_STORE).clear();
+    await awaitTransaction(tx);
   } catch {
     // ignore
   }

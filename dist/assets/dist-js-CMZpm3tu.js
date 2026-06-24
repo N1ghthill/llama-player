@@ -1,1 +1,0 @@
-import{invoke as e}from"./core-SJ5v2iOU.js";async function t(t=0){await e(`plugin:process|exit`,{code:t})}async function n(){await e(`plugin:process|restart`)}export{t as exit,n as relaunch};

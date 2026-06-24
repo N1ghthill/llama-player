@@ -8,6 +8,7 @@ const initialState: PlayerState = {
   currentTime: 0,
   duration: 0,
   playlist: [],
+  originalPlaylist: [],
   repeatMode: "none",
   isShuffled: false,
 };
@@ -87,6 +88,7 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
       return {
         ...state,
         playlist: action.tracks,
+        originalPlaylist: [...action.tracks],
         currentTrack: action.tracks[0] ?? null,
         currentTime: 0,
         duration: action.tracks[0]?.duration ?? 0,
@@ -94,12 +96,19 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
       };
 
     case "ADD_TRACK":
-      return { ...state, playlist: [...state.playlist, action.track] };
+      return {
+        ...state,
+        playlist: [...state.playlist, action.track],
+        originalPlaylist: state.isShuffled
+          ? [...state.originalPlaylist, action.track]
+          : [...state.playlist, action.track],
+      };
 
     case "REMOVE_TRACK":
       return {
         ...state,
         playlist: state.playlist.filter((t) => t.id !== action.trackId),
+        originalPlaylist: state.originalPlaylist.filter((t) => t.id !== action.trackId),
         currentTrack:
           state.currentTrack?.id === action.trackId
             ? null
@@ -107,15 +116,21 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
       };
 
     case "REORDER_PLAYLIST":
-      return { ...state, playlist: action.tracks };
+      return {
+        ...state,
+        playlist: action.tracks,
+        originalPlaylist: state.isShuffled ? [...state.originalPlaylist] : [...action.tracks],
+      };
 
     case "SET_REPEAT_MODE":
       return { ...state, repeatMode: action.mode };
 
     case "TOGGLE_SHUFFLE": {
       if (state.isShuffled) {
-        return { ...state, isShuffled: false };
+        // Restore original order
+        return { ...state, isShuffled: false, playlist: [...state.originalPlaylist] };
       }
+      // Save original order and shuffle
       return { ...state, isShuffled: true, playlist: shuffleArray(state.playlist) };
     }
 
@@ -162,6 +177,7 @@ export function usePlayer(initialPlaylist: Track[] = []) {
   const [state, dispatch] = useReducer(playerReducer, {
     ...initialState,
     playlist: initialPlaylist,
+    originalPlaylist: [...initialPlaylist],
     currentTrack: initialPlaylist[0] ?? null,
     duration: initialPlaylist[0]?.duration ?? 0,
   });

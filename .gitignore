@@ -23,5 +23,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# DeepCode cache
+.deepcode/
+
 # Tauri
 src-tauri/gen/schemas/

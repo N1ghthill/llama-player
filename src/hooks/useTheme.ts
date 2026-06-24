@@ -79,6 +79,20 @@ function loadTheme(): ThemeMode {
 function applyTheme(mode: ThemeMode): void {
   const colors = THEMES[mode];
   const root = document.documentElement;
+
+  root.style.setProperty("--player-bg", colors.bg);
+  root.style.setProperty("--panel-bg", colors.primary);
+  root.style.setProperty("--panel-raised", colors.secondary);
+  root.style.setProperty("--panel-sunken", colors.progressBg);
+  root.style.setProperty("--text", colors.text);
+  root.style.setProperty("--text-muted", colors.textDim);
+  root.style.setProperty("--border", colors.border);
+  root.style.setProperty("--accent", colors.accent);
+  root.style.setProperty("--accent-soft", colors.accentDim + "2a");
+  root.style.setProperty("--danger", colors.highlight);
+  root.style.setProperty("--meter", colors.progressFill);
+  root.style.setProperty("--shadow", colors.shadow);
+
   root.style.setProperty("--winamp-bg", colors.bg);
   root.style.setProperty("--winamp-primary", colors.primary);
   root.style.setProperty("--winamp-secondary", colors.secondary);

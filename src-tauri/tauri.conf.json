@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Llama Player",
   "version": "0.1.1",
-  "identifier": "com.llamaplayer.desktop",
+  "identifier": "com.llamaplayer.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,17 +13,17 @@
     "windows": [
       {
         "title": "🦙 Llama Player",
-        "width": 480,
-        "height": 680,
+        "width": 960,
+        "height": 720,
         "minWidth": 360,
-        "minHeight": 500,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false,
         "center": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https://www.googleapis.com data:; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://oauth2.googleapis.com"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; media-src 'self' data: asset:; connect-src 'self' asset:"
     }
   },
   "bundle": {
@@ -39,7 +39,17 @@
     ],
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libglib2.0-0",
+          "libcairo2",
+          "libgdk-pixbuf2.0-0",
+          "libpango-1.0-0",
+          "libatk1.0-0",
+          "libjavascriptcoregtk-4.1-0",
+          "libsoup-3.0-0"
+        ]
       }
     },
     "macOS": {

@@ -6,7 +6,6 @@ export interface Track {
   duration: number; // seconds
   coverUrl?: string;
   src?: string; // file path or URL
-  driveFileId?: string; // Google Drive file ID
   mimeType?: string;
   size?: number;
   isFavorite?: boolean;
@@ -21,6 +20,7 @@ export interface PlayerState {
   currentTime: number; // seconds
   duration: number; // seconds
   playlist: Track[];
+  originalPlaylist: Track[];
   repeatMode: RepeatMode;
   isShuffled: boolean;
 }

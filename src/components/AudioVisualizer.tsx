@@ -196,7 +196,7 @@ export function AudioVisualizer({
         animFrameRef.current = null;
       }
     };
-  }, [mode, drawBars, drawWaveform]);
+  }, [mode, drawBars, drawWaveform, drawEqualizer]);
 
   const toggleMode = () => {
     setMode((m) => {
