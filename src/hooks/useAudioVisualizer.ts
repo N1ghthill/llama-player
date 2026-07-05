@@ -64,7 +64,8 @@ function getOrCreateAudioGraph(audio: HTMLAudioElement): {
 
 export function useAudioVisualizer(
   audioRef: React.RefObject<HTMLAudioElement | null>,
-  isActive: boolean
+  isActive: boolean,
+  containerRef?: React.RefObject<HTMLElement | null>
 ) {
   const freqDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(FFT_SIZE / 2));
   const waveDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(FFT_SIZE));
@@ -110,7 +111,13 @@ export function useAudioVisualizer(
     setIsVisualizerActive(true);
     frameCountRef.current = 0;
 
+    let isVisible = true;
+
     const tick = () => {
+      if (!isVisible) {
+        rafRef.current = null;
+        return;
+      }
       const currentGraph = audioGraphMap.get(audio);
       if (currentGraph) {
         const freqArray = freqDataRef.current;
@@ -129,10 +136,37 @@ export function useAudioVisualizer(
 
     rafRef.current = requestAnimationFrame(tick);
 
+    // IntersectionObserver: pausa o RAF quando o container sai da tela
+    let observer: IntersectionObserver | null = null;
+    if (containerRef?.current) {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            isVisible = true;
+            // Se o RAF foi cancelado, reinicia
+            if (rafRef.current === null) {
+              rafRef.current = requestAnimationFrame(tick);
+            }
+          } else {
+            isVisible = false;
+            if (rafRef.current !== null) {
+              cancelAnimationFrame(rafRef.current);
+              rafRef.current = null;
+            }
+          }
+        },
+        { threshold: 0 }
+      );
+      observer.observe(containerRef.current);
+    }
+
     return () => {
+      if (observer) {
+        observer.disconnect();
+      }
       cleanup();
     };
-  }, [audioRef, isActive, cleanup]);
+  }, [audioRef, isActive, containerRef, cleanup]);
 
   return {
     getVisualizerData,

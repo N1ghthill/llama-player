@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { memo, useCallback, useRef } from "react";
 
 interface ProgressBarProps {
   currentTime: number;
@@ -13,7 +13,7 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function ProgressBar({ currentTime, duration, onSeek }: ProgressBarProps) {
+export const ProgressBar = memo(function ProgressBar({ currentTime, duration, onSeek }: ProgressBarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -42,4 +42,4 @@ export function ProgressBar({ currentTime, duration, onSeek }: ProgressBarProps)
       </span>
     </div>
   );
-}
+});

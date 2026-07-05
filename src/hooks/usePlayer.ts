@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useMemo } from "react";
 import type { PlayerState, PlayerAction, Track, RepeatMode } from "../types";
 
 const initialState: PlayerState = {
@@ -190,46 +190,30 @@ export function usePlayer(initialPlaylist: Track[] = []) {
     duration: initialPlaylist[0]?.duration ?? 0,
   });
 
-  const play = useCallback((track?: Track) => dispatch({ type: "PLAY", track }), []);
-  const pause = useCallback(() => dispatch({ type: "PAUSE" }), []);
-  const stop = useCallback(() => dispatch({ type: "STOP" }), []);
-  const next = useCallback(() => dispatch({ type: "NEXT" }), []);
-  const prev = useCallback(() => dispatch({ type: "PREV" }), []);
-  const seek = useCallback((time: number) => dispatch({ type: "SEEK", time }), []);
-  const setVolume = useCallback((volume: number) => dispatch({ type: "SET_VOLUME", volume }), []);
-  const loadPlaylist = useCallback((tracks: Track[]) => dispatch({ type: "LOAD_PLAYLIST", tracks }), []);
-  const addTrack = useCallback((track: Track) => dispatch({ type: "ADD_TRACK", track }), []);
-  const removeTrack = useCallback((trackId: string) => dispatch({ type: "REMOVE_TRACK", trackId }), []);
-  const reorderPlaylist = useCallback((tracks: Track[]) => dispatch({ type: "REORDER_PLAYLIST", tracks }), []);
-  const setRepeatMode = useCallback((mode: RepeatMode) => dispatch({ type: "SET_REPEAT_MODE", mode }), []);
-  const toggleShuffle = useCallback(() => dispatch({ type: "TOGGLE_SHUFFLE" }), []);
-  const setDuration = useCallback((duration: number) => dispatch({ type: "SET_DURATION", duration }), []);
-  const setCurrentTime = useCallback((time: number) => dispatch({ type: "SET_CURRENT_TIME", time }), []);
-  const toggleFavorite = useCallback((trackId: string) => dispatch({ type: "TOGGLE_FAVORITE", trackId }), []);
-  const loadFavorites = useCallback((favoriteIds: string[]) => dispatch({ type: "LOAD_FAVORITES", favoriteIds }), []);
-  const setCrossfade = useCallback((duration: number) => dispatch({ type: "SET_CROSSFADE", duration }), []);
-  const toggleGapless = useCallback(() => dispatch({ type: "TOGGLE_GAPLESS" }), []);
+  const actions = useMemo(
+    () => ({
+      play: (track?: Track) => dispatch({ type: "PLAY", track }),
+      pause: () => dispatch({ type: "PAUSE" }),
+      stop: () => dispatch({ type: "STOP" }),
+      next: () => dispatch({ type: "NEXT" }),
+      prev: () => dispatch({ type: "PREV" }),
+      seek: (time: number) => dispatch({ type: "SEEK", time }),
+      setVolume: (volume: number) => dispatch({ type: "SET_VOLUME", volume }),
+      loadPlaylist: (tracks: Track[]) => dispatch({ type: "LOAD_PLAYLIST", tracks }),
+      addTrack: (track: Track) => dispatch({ type: "ADD_TRACK", track }),
+      removeTrack: (trackId: string) => dispatch({ type: "REMOVE_TRACK", trackId }),
+      reorderPlaylist: (tracks: Track[]) => dispatch({ type: "REORDER_PLAYLIST", tracks }),
+      setRepeatMode: (mode: RepeatMode) => dispatch({ type: "SET_REPEAT_MODE", mode }),
+      toggleShuffle: () => dispatch({ type: "TOGGLE_SHUFFLE" }),
+      setDuration: (duration: number) => dispatch({ type: "SET_DURATION", duration }),
+      setCurrentTime: (time: number) => dispatch({ type: "SET_CURRENT_TIME", time }),
+      toggleFavorite: (trackId: string) => dispatch({ type: "TOGGLE_FAVORITE", trackId }),
+      loadFavorites: (favoriteIds: string[]) => dispatch({ type: "LOAD_FAVORITES", favoriteIds }),
+      setCrossfade: (duration: number) => dispatch({ type: "SET_CROSSFADE", duration }),
+      toggleGapless: () => dispatch({ type: "TOGGLE_GAPLESS" }),
+    }),
+    []
+  );
 
-  return {
-    state,
-    play,
-    pause,
-    stop,
-    next,
-    prev,
-    seek,
-    setVolume,
-    loadPlaylist,
-    addTrack,
-    removeTrack,
-    reorderPlaylist,
-    setRepeatMode,
-    toggleShuffle,
-    setDuration,
-    setCurrentTime,
-    toggleFavorite,
-    loadFavorites,
-    setCrossfade,
-    toggleGapless,
-  };
+  return useMemo(() => ({ state, actions }), [state, actions]);
 }

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { RepeatMode, Track } from "../types";
 
 interface PlayerControlsProps {
@@ -21,7 +22,7 @@ interface PlayerControlsProps {
   onToggleGapless?: () => void;
 }
 
-export function PlayerControls({
+export const PlayerControls = memo(function PlayerControls({
   currentTrack,
   currentTrackId,
   isPlaying,
@@ -198,4 +199,4 @@ export function PlayerControls({
       )}
     </section>
   );
-}
+});

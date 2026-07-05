@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 import type { Track } from "../types";
 import type { SavedPlaylist } from "../hooks/usePlaylists";
 
@@ -14,7 +14,7 @@ interface PlaylistManagerProps {
   onClose: () => void;
 }
 
-export function PlaylistManager({
+export const PlaylistManager = memo(function PlaylistManager({
   playlists,
   activePlaylistId,
   currentTracks,
@@ -248,4 +248,4 @@ export function PlaylistManager({
       )}
     </section>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Track } from "../types";
 
 interface HistoryEntry {
@@ -30,7 +31,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function HistoryPanel({
+export const HistoryPanel = memo(function HistoryPanel({
   entries,
   onSelectTrack,
   onClear,
@@ -80,4 +81,4 @@ export function HistoryPanel({
       )}
     </section>
   );
-}
+});

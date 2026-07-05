@@ -11,14 +11,10 @@ import { useLyrics } from "./hooks/useLyrics";
 import {
   TitleBar,
   Playlist,
-  PlayerControls,
-  ProgressBar,
   StatusBar,
-  AudioVisualizer,
-  HistoryPanel,
-  PlaylistManager,
-  LyricsDisplay,
-  DataManagement,
+  MixerPanel,
+  DeckPanel,
+  LibraryShell,
 } from "./components";
 import type { Track } from "./types";
 import { createTrackFromLocalPath } from "./services/localMetadata";
@@ -49,16 +45,29 @@ function App() {
     openFilePicker,
     openFolderPicker,
     filePathToUrl,
-    sendNotification,
-    registerShortcuts,
   } = useTauri();
 
   const { loadFavorites, toggleFavorite: toggleStoredFavorite } = useFavorites();
   const history = useHistory();
-  const playlists = usePlaylists();
+  const {
+    playlists: savedPlaylists,
+    activePlaylistId,
+    saveCurrentPlaylist,
+    loadPlaylist,
+    deletePlaylist,
+    renamePlaylist,
+  } = usePlaylists();
   const { theme, cycleTheme } = useTheme();
-  const visualizer = useAudioVisualizer(audioRef, state.isPlaying);
-  const lyrics = useLyrics();
+  const visualizerContainerRef = useRef<HTMLDivElement>(null);
+  const visualizer = useAudioVisualizer(audioRef, state.isPlaying, visualizerContainerRef);
+  const {
+    lyrics: lyricsData,
+    currentLine,
+    nextLine,
+    progress: lyricsProgress,
+    isLoading: lyricsLoading,
+    error: lyricsError,
+  } = useLyrics();
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ processed: number; total: number } | null>(null);
@@ -67,10 +76,23 @@ function App() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [showDataManagement, setShowDataManagement] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Refs para evitar dependências de estado que mudam frequentemente
+  const isPlayingRef = useRef(state.isPlaying);
+  const currentTimeRef = useRef(state.currentTime);
+  const durationRef = useRef(state.duration);
+  const volumeRef = useRef(state.volume);
   const currentTrackRef = useRef(state.currentTrack);
+  isPlayingRef.current = state.isPlaying;
+  currentTimeRef.current = state.currentTime;
+  durationRef.current = state.duration;
+  volumeRef.current = state.volume;
   currentTrackRef.current = state.currentTrack;
+
+  // Ref para history.addEntry (estável, evita dependência do objeto history)
+  const addHistoryEntryRef = useRef(history.addEntry);
+  addHistoryEntryRef.current = history.addEntry;
 
   // Carrega favoritos salvos ao iniciar
   useEffect(() => {
@@ -78,150 +100,56 @@ function App() {
     if (savedFavorites.length > 0) {
       loadPlayerFavorites(savedFavorites);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadFavorites, loadPlayerFavorites]);
 
-  // Registra atalhos de teclado (Media Session API + Tauri global shortcuts)
-  useEffect(() => {
-    const cleanup = registerShortcuts({
-      MediaPlayPause: () => (state.isPlaying ? pause() : play()),
-      MediaNextTrack: () => next(),
-      MediaPrevTrack: () => prev(),
-      MediaStop: () => pause(),
-    });
-
-    return () => {
-      cleanup.then((fn) => fn());
-    };
-  }, [registerShortcuts, state.isPlaying, pause, play, next, prev]);
-
-  // Media Session API (navegador)
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: state.currentTrack?.title ?? "Llama Player",
-      artist: state.currentTrack?.artist ?? undefined,
-      album: state.currentTrack?.album ?? undefined,
-    });
-
-    navigator.mediaSession.setActionHandler("play", () => play());
-    navigator.mediaSession.setActionHandler("pause", () => pause());
-    navigator.mediaSession.setActionHandler("nexttrack", () => next());
-    navigator.mediaSession.setActionHandler("previoustrack", () => prev());
-  }, [state.currentTrack, play, pause, next, prev]);
-
-  // Notificação ao trocar de música + histórico + letras
-  useEffect(() => {
-    if (state.currentTrack && state.isPlaying) {
-      sendNotification(
-        `▶ ${state.currentTrack.title}`,
-        state.currentTrack.artist
-          ? `Por ${state.currentTrack.artist}`
-          : undefined
-      );
-      history.addEntry(state.currentTrack);
-      lyrics.loadLyrics(state.currentTrack.title, state.currentTrack.artist);
-    }
-  }, [state.currentTrack?.id, state.isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Atualiza letras sincronizadas com o tempo
-  useEffect(() => {
-    if (!showLyrics) return;
-    const interval = setInterval(() => {
-      lyrics.updateTime(state.currentTime);
-    }, 100); // 10 updates per second
-    return () => clearInterval(interval);
-  }, [showLyrics, state.currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Verifica updates no desktop. O updater exige endpoint e assinatura configurados.
-  useEffect(() => {
-    if (!tauriState.isTauri) return;
-
-    let cancelled = false;
-
-    const checkForUpdates = async () => {
-      try {
-        const [{ check }, { relaunch }] = await Promise.all([
-          import("@tauri-apps/plugin-updater"),
-          import("@tauri-apps/plugin-process"),
-        ]);
-
-        const update = await check({ timeout: 30_000 });
-        if (!update || cancelled) return;
-
-        const shouldInstall = window.confirm(
-          `Atualização ${update.version} disponível. Instalar agora?`
-        );
-        if (!shouldInstall || cancelled) return;
-
-        await update.downloadAndInstall();
-        if (!cancelled) {
-          await relaunch();
-        }
-      } catch (err) {
-        console.warn("[Llama Player] Erro ao verificar atualizações:", err);
-      }
-    };
-
-    checkForUpdates();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [tauriState.isTauri]);
-
-  const handleSelectTrack = (track: Track) => {
-    play(track);
-  };
-
-  const markFavoriteTracks = useCallback(
-    (tracks: Track[]) => {
+  // Handler centralizado para adicionar tracks à playlist
+  // Usa ref para currentTrack para evitar recriação quando a música muda
+  const addTracksToPlaylist = useCallback(
+    async (tracks: Track[]) => {
       const favoriteIds = new Set(loadFavorites());
-      if (favoriteIds.size === 0) return tracks;
-      return tracks.map((track) =>
-        favoriteIds.has(track.id) ? { ...track, isFavorite: true } : track
-      );
+      const markedTracks =
+        favoriteIds.size === 0
+          ? tracks
+          : tracks.map((track) =>
+              favoriteIds.has(track.id) ? { ...track, isFavorite: true } : track
+            );
+
+      for (const track of markedTracks) {
+        addTrack(track);
+      }
+
+      if (!currentTrackRef.current && markedTracks.length > 0) {
+        play(markedTracks[0]);
+      }
     },
-    [loadFavorites]
+    [loadFavorites, addTrack, play]
   );
 
-  const handleOpenFile = async () => {
+  const handleOpenFile = useCallback(async () => {
     if (tauriState.isTauri) {
-      // Usa file picker nativo do Tauri
       setIsLoading(true);
       try {
         const paths = await openFilePicker();
         if (!paths || paths.length === 0) return;
 
         const localTracks: Track[] = [];
-
         for (const path of paths) {
           const url = await filePathToUrl(path);
           localTracks.push(await createTrackFromLocalPath(path, url));
         }
 
-        const allTracks = markFavoriteTracks(localTracks);
-
-        for (const track of allTracks) {
-          addTrack(track);
-        }
-
-        if (!currentTrackRef.current && allTracks.length > 0) {
-          play(allTracks[0]);
-        }
+        await addTracksToPlaylist(localTracks);
       } catch (err) {
         console.error("[Llama Player] Erro ao abrir arquivos:", err);
       } finally {
         setIsLoading(false);
       }
     } else {
-      // Fallback: input file HTML
       fileInputRef.current?.click();
     }
-  };
+  }, [tauriState.isTauri, openFilePicker, filePathToUrl, addTracksToPlaylist]);
 
-  const handleOpenFolder = async () => {
+  const handleOpenFolder = useCallback(async () => {
     if (tauriState.isTauri) {
       setIsLoading(true);
       try {
@@ -235,22 +163,14 @@ function App() {
           setLoadingProgress({ processed: localTracks.length, total: paths.length });
         }
 
-        const allTracks = markFavoriteTracks(localTracks);
-
-        for (const track of allTracks) {
-          addTrack(track);
-        }
-
-        if (!currentTrackRef.current && allTracks.length > 0) {
-          play(allTracks[0]);
-        }
+        await addTracksToPlaylist(localTracks);
       } catch (err) {
         console.error("[Llama Player] Erro ao abrir pasta:", err);
       } finally {
         setIsLoading(false);
+        setLoadingProgress(null);
       }
     } else {
-      // Fallback: input file HTML com webkitdirectory
       const input = document.createElement("input");
       input.type = "file";
       input.webkitdirectory = true;
@@ -266,13 +186,7 @@ function App() {
           const processedTracks = await processFiles(fileArray, (progress) => {
             setLoadingProgress(progress);
           });
-          const tracks = markFavoriteTracks(processedTracks);
-          for (const track of tracks) {
-            addTrack(track);
-          }
-          if (!currentTrackRef.current && tracks.length > 0) {
-            play(tracks[0]);
-          }
+          await addTracksToPlaylist(processedTracks);
         } catch (err) {
           console.error("[Llama Player] Erro ao processar pasta:", err);
         } finally {
@@ -282,7 +196,7 @@ function App() {
       };
       input.click();
     }
-  };
+  }, [tauriState.isTauri, openFolderPicker, filePathToUrl, processFiles, addTracksToPlaylist]);
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -297,16 +211,7 @@ function App() {
         const processedTracks = await processFiles(fileArray, (progress) => {
           setLoadingProgress(progress);
         });
-        const tracks = markFavoriteTracks(processedTracks);
-
-        for (const track of tracks) {
-          addTrack(track);
-        }
-
-        // If nothing is playing, start with the first track
-        if (!currentTrackRef.current && tracks.length > 0) {
-          play(tracks[0]);
-        }
+        await addTracksToPlaylist(processedTracks);
       } catch (err) {
         console.error("[Llama Player] Erro ao processar arquivos:", err);
       } finally {
@@ -314,10 +219,9 @@ function App() {
         setLoadingProgress(null);
       }
 
-      // Reset input so the same file can be selected again
       e.target.value = "";
     },
-    [processFiles, markFavoriteTracks, addTrack, play]
+    [processFiles, addTracksToPlaylist]
   );
 
   const handleDropFiles = useCallback(
@@ -329,13 +233,7 @@ function App() {
         const processedTracks = await processFiles(fileArray, (progress) => {
           setLoadingProgress(progress);
         });
-        const tracks = markFavoriteTracks(processedTracks);
-        for (const track of tracks) {
-          addTrack(track);
-        }
-        if (!currentTrackRef.current && tracks.length > 0) {
-          play(tracks[0]);
-        }
+        await addTracksToPlaylist(processedTracks);
       } catch (err) {
         console.error("[Llama Player] Erro ao processar arquivos arrastados:", err);
       } finally {
@@ -343,7 +241,7 @@ function App() {
         setLoadingProgress(null);
       }
     },
-    [processFiles, markFavoriteTracks, addTrack, play]
+    [processFiles, addTracksToPlaylist]
   );
 
   const handleToggleFavorite = useCallback(
@@ -354,6 +252,54 @@ function App() {
     [toggleStoredFavorite, togglePlayerFavorite]
   );
 
+  // Usa ref para history.addEntry — evita dependência do objeto history
+  const handleSelectTrack = useCallback(
+    (track: Track) => {
+      addHistoryEntryRef.current(track);
+      play(track);
+    },
+    [play]
+  );
+
+  // Handlers estáveis para os toggles (evitam quebrar React.memo)
+  const handleToggleCompact = useCallback(() => {
+    setIsCompact((v) => !v);
+  }, []);
+
+  const handleToggleShowHistory = useCallback(() => {
+    setShowHistory((v) => !v);
+  }, []);
+
+  const handleToggleShowPlaylistManager = useCallback(() => {
+    setShowPlaylistManager((v) => !v);
+  }, []);
+
+  const handleToggleShowLyrics = useCallback(() => {
+    setShowLyrics((v) => !v);
+  }, []);
+
+  const handleToggleShowDataManagement = useCallback(() => {
+    setShowDataManagement((v) => !v);
+  }, []);
+
+  const handleClosePlaylistManager = useCallback(() => {
+    setShowPlaylistManager(false);
+  }, []);
+
+  const handleCloseDataManagement = useCallback(() => {
+    setShowDataManagement(false);
+  }, []);
+
+  const handleReplaceTracks = useCallback(
+    (tracks: Track[]) => {
+      if (tracks.length === 0) return;
+      reorderPlaylist(tracks);
+      play(tracks[0]);
+    },
+    [reorderPlaylist, play]
+  );
+
+  // Efeito de teclado com refs para evitar recriação do listener a cada tick
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
@@ -370,144 +316,75 @@ function App() {
       switch (event.key) {
         case " ":
           event.preventDefault();
-          state.isPlaying ? pause() : play();
+          isPlayingRef.current ? pause() : play();
           break;
         case "ArrowLeft":
           event.preventDefault();
-          seek(Math.max(0, state.currentTime - 5));
+          seek(Math.max(0, currentTimeRef.current - 5));
           break;
         case "ArrowRight":
           event.preventDefault();
-          seek(Math.min(state.duration, state.currentTime + 5));
+          seek(Math.min(durationRef.current, currentTimeRef.current + 5));
           break;
         case "ArrowUp":
         case "+":
         case "=":
           event.preventDefault();
-          setVolume(Math.min(100, state.volume + 5));
+          setVolume(Math.min(100, volumeRef.current + 5));
           break;
         case "ArrowDown":
         case "-":
           event.preventDefault();
-          setVolume(Math.max(0, state.volume - 5));
+          setVolume(Math.max(0, volumeRef.current - 5));
           break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state.isPlaying, state.currentTime, state.duration, state.volume, play, pause, seek, setVolume]);
+  }, [play, pause, seek, setVolume]);
 
   return (
     <div className="app">
       <TitleBar />
 
       <main className="main-content">
-        <section className="deck-panel">
-          <div className="deck-visual">
-            <AudioVisualizer
-              getVisualizerData={visualizer.getVisualizerData}
-              isActive={visualizer.isActive}
-            />
-          </div>
-
-          <div className="deck-now">
-            <PlayerControls
-              currentTrack={state.currentTrack}
-              currentTrackId={state.currentTrack?.id ?? null}
-              isPlaying={state.isPlaying}
-              isShuffled={state.isShuffled}
-              repeatMode={state.repeatMode}
-              crossfadeDuration={state.crossfadeDuration}
-              gaplessEnabled={state.gaplessEnabled}
-              isCompact={isCompact}
-              onPlay={() => play()}
-              onPause={pause}
-              onNext={next}
-              onPrev={prev}
-              onToggleShuffle={toggleShuffle}
-              onRepeatModeChange={setRepeatMode}
-              onToggleFavorite={handleToggleFavorite}
-              onToggleCompact={() => setIsCompact((v) => !v)}
-              onCrossfadeChange={setCrossfade}
-              onToggleGapless={toggleGapless}
-            />
-
-            <ProgressBar
-              currentTime={state.currentTime}
-              duration={state.duration}
-              onSeek={seek}
-            />
-          </div>
-        </section>
-
-        <div className="toolbar">
-          <button
-            className="toolbar-btn"
-            onClick={handleOpenFile}
-            disabled={isLoading}
-            title="Abrir arquivo de áudio local"
-          >
-            {isLoading && loadingProgress
-              ? `⏳ ${loadingProgress.processed}/${loadingProgress.total}`
-              : isLoading
-              ? "⏳ Lendo..."
-              : "📂 Arquivo local"}
-          </button>
-          <button
-            className="toolbar-btn"
-            onClick={handleOpenFolder}
-            disabled={isLoading}
-            title="Abrir pasta de músicas (varredura recursiva)"
-          >
-            📁 Abrir pasta
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            multiple
-            style={{ display: "none" }}
-            onChange={handleFileChange}
+        <section className="studio-stack">
+          <DeckPanel
+            visualizerContainerRef={visualizerContainerRef}
+            getVisualizerData={visualizer.getVisualizerData}
+            isVisualizerActive={visualizer.isActive}
+            currentTrack={state.currentTrack}
+            currentTrackId={state.currentTrack?.id ?? null}
+            isPlaying={state.isPlaying}
+            isShuffled={state.isShuffled}
+            repeatMode={state.repeatMode}
+            crossfadeDuration={state.crossfadeDuration}
+            gaplessEnabled={state.gaplessEnabled}
+            isCompact={isCompact}
+            currentTime={state.currentTime}
+            duration={state.duration}
+            onPlay={play}
+            onPause={pause}
+            onNext={next}
+            onPrev={prev}
+            onToggleShuffle={toggleShuffle}
+            onRepeatModeChange={setRepeatMode}
+            onToggleFavorite={handleToggleFavorite}
+            onToggleCompact={handleToggleCompact}
+            onSeek={seek}
           />
-          <button
-            className={`toolbar-btn ${showHistory ? "toolbar-btn-active" : ""}`}
-            onClick={() => setShowHistory((v) => !v)}
-            title="Histórico de reprodução"
-          >
-            🕐 Histórico
-          </button>
-          <button
-            className={`toolbar-btn ${showPlaylistManager ? "toolbar-btn-active" : ""}`}
-            onClick={() => setShowPlaylistManager((v) => !v)}
-            title="Gerenciar playlists"
-          >
-            📋 Playlists
-          </button>
-          <button
-            className={`toolbar-btn ${showLyrics ? "toolbar-btn-active" : ""}`}
-            onClick={() => setShowLyrics((v) => !v)}
-            title="Letras sincronizadas"
-          >
-            💬 Letras
-          </button>
-          <button
-            className={`toolbar-btn ${showDataManagement ? "toolbar-btn-active" : ""}`}
-            onClick={() => setShowDataManagement((v) => !v)}
-            title="Dados locais"
-          >
-            ⚙ Dados
-          </button>
-          <button
-            className="toolbar-btn"
-            onClick={cycleTheme}
-            title={`Tema: ${theme === "winamp" ? "Winamp Nostálgico" : theme === "dark" ? "Escuro" : "Claro"}`}
-          >
-            {theme === "winamp" ? "🎨" : theme === "dark" ? "🌙" : "☀️"}
-          </button>
-        </div>
 
-        <section className="library-layout">
+          <MixerPanel
+            volume={state.volume}
+            crossfadeDuration={state.crossfadeDuration}
+            gaplessEnabled={state.gaplessEnabled}
+            isPlaying={state.isPlaying}
+            onVolumeChange={setVolume}
+            onCrossfadeChange={setCrossfade}
+            onToggleGapless={toggleGapless}
+          />
+
           <Playlist
             tracks={state.playlist}
             currentTrackId={state.currentTrack?.id ?? null}
@@ -517,60 +394,46 @@ function App() {
             onDropFiles={handleDropFiles}
             onToggleFavorite={handleToggleFavorite}
           />
-
-          <aside className="side-panels">
-            {showHistory && (
-              <HistoryPanel
-                entries={history.entries}
-                onSelectTrack={handleSelectTrack}
-                onClear={history.clear}
-              />
-            )}
-
-            {showPlaylistManager && (
-              <PlaylistManager
-                playlists={playlists.playlists}
-                activePlaylistId={playlists.activePlaylistId}
-                currentTracks={state.playlist}
-                onSavePlaylist={playlists.saveCurrentPlaylist}
-                onLoadPlaylist={playlists.loadPlaylist}
-                onDeletePlaylist={playlists.deletePlaylist}
-                onRenamePlaylist={playlists.renamePlaylist}
-                onReplaceTracks={(tracks) => {
-                  if (tracks.length === 0) return;
-                  reorderPlaylist(tracks);
-                  play(tracks[0]);
-                }}
-                onClose={() => setShowPlaylistManager(false)}
-              />
-            )}
-
-            {showLyrics && (
-              <LyricsDisplay
-                lines={lyrics.lyrics?.lines ?? []}
-                currentLine={lyrics.currentLine}
-                nextLine={lyrics.nextLine}
-                progress={lyrics.progress}
-                isLoading={lyrics.isLoading}
-                error={lyrics.error}
-              />
-            )}
-
-            {showDataManagement && (
-              <DataManagement
-                version={__APP_VERSION__}
-                onClose={() => setShowDataManagement(false)}
-              />
-            )}
-
-            {!showHistory && !showPlaylistManager && !showLyrics && !showDataManagement && (
-              <div className="library-empty-panel">
-                <span className="library-empty-title">Biblioteca local</span>
-                <span>Arraste músicas para a lista ou abra arquivos do computador.</span>
-              </div>
-            )}
-          </aside>
         </section>
+
+        <LibraryShell
+          theme={theme}
+          isLoading={isLoading}
+          loadingProgress={loadingProgress}
+          currentTrack={state.currentTrack}
+          showHistory={showHistory}
+          showPlaylistManager={showPlaylistManager}
+          showLyrics={showLyrics}
+          showDataManagement={showDataManagement}
+          historyEntries={history.entries}
+          savedPlaylists={savedPlaylists}
+          activePlaylistId={activePlaylistId}
+          lyricsData={lyricsData}
+          currentLine={currentLine}
+          nextLine={nextLine}
+          lyricsProgress={lyricsProgress}
+          lyricsLoading={lyricsLoading}
+          lyricsError={lyricsError}
+          playlistTracks={state.playlist}
+          fileInputRef={fileInputRef}
+          onCycleTheme={cycleTheme}
+          onOpenFile={handleOpenFile}
+          onOpenFolder={handleOpenFolder}
+          onFileChange={handleFileChange}
+          onToggleShowHistory={handleToggleShowHistory}
+          onToggleShowPlaylistManager={handleToggleShowPlaylistManager}
+          onToggleShowLyrics={handleToggleShowLyrics}
+          onToggleShowDataManagement={handleToggleShowDataManagement}
+          onSelectTrack={handleSelectTrack}
+          onClearHistory={history.clear}
+          onSavePlaylist={saveCurrentPlaylist}
+          onLoadPlaylist={loadPlaylist}
+          onDeletePlaylist={deletePlaylist}
+          onRenamePlaylist={renamePlaylist}
+          onReplaceTracks={handleReplaceTracks}
+          onClosePlaylistManager={handleClosePlaylistManager}
+          onCloseDataManagement={handleCloseDataManagement}
+        />
       </main>
 
       <StatusBar

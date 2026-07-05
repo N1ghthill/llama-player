@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { memo, useRef, useEffect, useState } from "react";
 
 type VisualizerMode = "bars" | "waveform" | "equalizer";
 
@@ -17,7 +17,7 @@ const DEFAULT_WIDTH = 480;
 const DEFAULT_HEIGHT = 120;
 const BAR_COUNT = 64;
 
-export function AudioVisualizer({
+export const AudioVisualizer = memo(function AudioVisualizer({
   getVisualizerData,
   isActive,
   width = DEFAULT_WIDTH,
@@ -123,7 +123,7 @@ export function AudioVisualizer({
       </div>
     </div>
   );
-}
+});
 
 // --- Funções de desenho puras (sem dependências de estado React) ---
 

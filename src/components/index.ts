@@ -9,3 +9,6 @@ export { PlaylistManager } from "./PlaylistManager";
 export { CacheStatus } from "./CacheStatus";
 export { LyricsDisplay } from "./LyricsDisplay";
 export { DataManagement } from "./DataManagement";
+export { MixerPanel } from "./MixerPanel";
+export { DeckPanel } from "./DeckPanel";
+export { LibraryShell } from "./LibraryShell";

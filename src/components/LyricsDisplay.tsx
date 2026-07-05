@@ -5,7 +5,7 @@
  * Suporta rolagem automática e progresso visual.
  */
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, memo } from "react";
 import type { LRCLine } from "../services/lrcParser";
 
 interface LyricsDisplayProps {
@@ -18,7 +18,7 @@ interface LyricsDisplayProps {
   onClose?: () => void;
 }
 
-export function LyricsDisplay({
+export const LyricsDisplay = memo(function LyricsDisplay({
   currentLine,
   nextLine,
   progress,
@@ -142,4 +142,4 @@ export function LyricsDisplay({
       </div>
     </div>
   );
-}
+});

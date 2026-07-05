@@ -15,6 +15,7 @@ interface AudioEngineCallbacks {
 }
 
 const CROSSFADE_INTERVAL_MS = 50; // how often to update fade volume
+const LOAD_TIMEOUT_MS = 30000; // max time to wait for audio element to load
 
 function isCacheableHttpSource(src: string): boolean {
   try {
@@ -40,9 +41,7 @@ async function readLocalTrackBlob(track: Track): Promise<Blob | null> {
         : bytes instanceof ArrayBuffer
           ? new Uint8Array(bytes)
           : new Uint8Array(bytes);
-    const buffer = new ArrayBuffer(data.byteLength);
-    new Uint8Array(buffer).set(data);
-    return new Blob([buffer], { type: track.mimeType || "audio/mpeg" });
+    return new Blob([data.buffer as ArrayBuffer], { type: track.mimeType || "audio/mpeg" });
   } catch (err) {
     console.warn("[Llama Player] Erro ao ler arquivo local:", err);
     return null;
@@ -58,6 +57,7 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
   const pendingPlayRef = useRef(false);
   const crossfadeDurationRef = useRef(0);
   const crossfadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const crossfadeGenRef = useRef(0); // generation token para evitar concorrência
   const baseVolumeRef = useRef(1); // 0..1
   const gaplessEnabledRef = useRef(false);
   const preloadedTrackRef = useRef<Track | null>(null);
@@ -215,10 +215,21 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
         const cacheKey = track.id;
         const sourceUrl = track.src;
 
+        // Timeout de segurança: se o áudio não carregar em 30s, resolve
+        // para não travar crossfade ou gapless para sempre
+        const timeoutId = setTimeout(() => {
+          resolve();
+        }, LOAD_TIMEOUT_MS);
+
+        const done = () => {
+          clearTimeout(timeoutId);
+          resolve();
+        };
+
         if (!sourceUrl) {
           audio.src = "";
           audio.load();
-          resolve();
+          done();
           return;
         }
 
@@ -230,7 +241,7 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
           // direta não funciona (ex: caminhos locais sem protocolo).
           if (sourceUrl.includes("asset.localhost")) {
             setDirectSource(audio, sourceUrl);
-            resolve();
+            done();
             return;
           }
 
@@ -240,7 +251,7 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
             } else {
               setDirectSource(audio, sourceUrl);
             }
-            resolve();
+            done();
           });
           return;
         }
@@ -248,7 +259,7 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
         getCachedAudio(cacheKey).then(async (cachedBlob) => {
           if (cachedBlob) {
             setBlobSource(audio, cachedBlob, track.id);
-            resolve();
+            done();
             return;
           }
 
@@ -256,7 +267,7 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
             const response = await fetch(sourceUrl);
             if (!response.ok) {
               setDirectSource(audio, sourceUrl);
-              resolve();
+              done();
               return;
             }
 
@@ -264,10 +275,10 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
             // Cache in background
             cacheAudioBlob(cacheKey, blob, track.title).catch(() => {});
             setBlobSource(audio, blob, track.id);
-            resolve();
+            done();
           } catch {
             setDirectSource(audio, sourceUrl);
-            resolve();
+            done();
           }
         });
       });
@@ -283,8 +294,14 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
 
       cleanupCrossfade();
 
+      // Generation token: se startCrossfade for chamado novamente antes
+      // do loadAudioElement resolver, o callback do primeiro é ignorado
+      const gen = ++crossfadeGenRef.current;
+
       // Load the next track into the crossfade audio element
       loadAudioElement(nextAudio, nextTrack).then(() => {
+        // Se um novo crossfade foi iniciado, ignora este callback
+        if (gen !== crossfadeGenRef.current) return;
         if (!nextAudio.src) return;
 
         // Start playing the next audio at volume 0
@@ -478,8 +495,14 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
    * Modifica loadTrack para suportar gapless:
    * Se o gapless está ativo e a próxima faixa já foi pré-carregada,
    * faz a troca instantânea em vez de carregar do zero.
+   *
+   * Usamos uma ref para loadTrack para evitar closure stale:
+   * se loadTrack for recriado (ex: StrictMode), a ref sempre aponta
+   * para a versão mais recente.
    */
-  const originalLoadTrack = loadTrack;
+  const loadTrackRef = useRef(loadTrack);
+  loadTrackRef.current = loadTrack;
+
   const gaplessLoadTrack = useCallback(
     (track: Track, crossfadeDuration: number = 0) => {
       // If gapless is enabled and we have a preloaded track, do instant swap
@@ -491,10 +514,10 @@ export function useAudioEngine(callbacks: AudioEngineCallbacks) {
         const swapped = performGaplessSwap();
         if (swapped) return;
       }
-      // Fall back to normal load
-      originalLoadTrack(track, crossfadeDuration);
+      // Fall back to normal load (sempre a versão mais recente)
+      loadTrackRef.current(track, crossfadeDuration);
     },
-    [originalLoadTrack, performGaplessSwap]
+    [performGaplessSwap]
   );
 
   return {

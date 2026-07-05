@@ -1,7 +1,7 @@
 {
   "name": "llama-player",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "🎵 Llama Player - Um player de música local inspirado em players desktop clássicos",
   "scripts": {
     "dev": "vite",
@@ -20,8 +20,6 @@
     "release:local": "npm run release:validate && npm run check && npm run build && npm run desktop:check"
   },
   "dependencies": {
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "jsmediatags": "^3.9.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

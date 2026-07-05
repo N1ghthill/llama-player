@@ -41,14 +41,14 @@ export function useMetadata() {
         }
 
         jsmediatags.read(file, {
-          onSuccess: (data) => {
+          onSuccess: async (data) => {
             const tags = data.tags;
             let coverUrl: string | undefined;
 
             // Converte a capa do álbum (se existir) para data URL
             if (tags.picture) {
               const { data: pictureData, format } = tags.picture;
-              const base64 = arrayBufferToBase64(pictureData);
+              const base64 = await arrayBufferToBase64(pictureData);
               const mimeType = format || "image/jpeg";
               coverUrl = `data:${mimeType};base64,${base64}`;
 
@@ -150,11 +150,17 @@ export function useMetadata() {
   };
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+function arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([buffer]);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result é "data:application/octet-stream;base64,<base64>"
+      const base64 = result.split(",")[1];
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }

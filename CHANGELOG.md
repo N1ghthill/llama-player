@@ -29,6 +29,41 @@ Formato baseado em Keep a Changelog e versionamento SemVer.
 - Abertura de URL externa agora bloqueia protocolos que nao sejam HTTP/HTTPS.
 - Documentacao reorganizada para produto instalavel, update e desinstalacao.
 
+## [0.2.0] — 2026-07-05
+
+### Added
+
+- Componentes `MixerPanel`, `DeckPanel` e `LibraryShell` extraídos do `App.tsx` (Fase 2 de componentização).
+- `React.memo` em `HistoryPanel`, `PlaylistManager`, `LyricsDisplay` e `DataManagement`.
+- Suporte a `prefers-reduced-motion` no CSS para acessibilidade.
+
+### Changed
+
+- **Performance:** `usePlayer` retorna `{ state, actions }` com `useMemo` estável — elimina cascata de re-renderizações.
+- **Performance:** `setTimeout` de 50ms substituído por evento `seeked` nativo — barra de progresso sem saltos.
+- **Performance:** Cópia dupla de buffer em `readLocalTrackBlob` eliminada — consumo de RAM reduzido.
+- **Performance:** Crossfade com generation token — race conditions eliminadas.
+- **Performance:** `gaplessLoadTrack` com ref para evitar closure stale.
+- **Performance:** `AudioVisualizer` pausa RAF quando fora da viewport (`IntersectionObserver`).
+- **Performance:** `Playlist` com `normalizedQuery`, `totalHeight`, `totalDuration` memoizados; `TrackItem` como `React.memo`; `ResizeObserver` com throttle.
+- **Performance:** `PlayerControls`, `ProgressBar`, `AudioVisualizer` envolvidos em `React.memo`.
+- **Performance:** `arrayBufferToBase64` otimizado com `String.fromCharCode`.
+- **Performance:** Efeito de teclado usa refs em vez de estado — listener registrado uma vez.
+- **Performance:** `addTracksToPlaylist` usa `currentTrackRef` — não recriado a cada música.
+- **Performance:** Objetos `playlists` e `lyrics` desestruturados em props individuais — `React.memo(LibraryShell)` funciona efetivamente.
+- **Performance:** Todos os callbacks inline (`onToggleShow*`, `onReplaceTracks`, `onToggleCompact`) extraídos para `useCallback` estável.
+- **Manutenção:** `require("jsmediatags")` substituído por `import` estático — tree-shaking funciona.
+- **Manutenção:** Dependências não usadas (`@tauri-apps/plugin-process`, `@tauri-apps/plugin-updater`) removidas do `package.json`.
+- **Manutenção:** Variáveis CSS mortas (`--panel-header`, `--control-hover`, `--control-hover-border`, `--shadow`) removidas.
+
+### Fixed
+
+- `usePlayer` retornava objeto novo a cada render — corrigido com `useMemo`.
+- `handleSelectTrack` recriado a cada entrada no histórico — corrigido com ref para `history.addEntry`.
+- `loadingProgress` não limpo no `finally` do Tauri `handleOpenFolder` — corrigido.
+- `eslint-disable` no `useEffect` de favoritos — dependências adicionadas.
+- `sendNotification` e `registerShortcuts` não usados — removidos do destructuring.
+
 ### Fixed
 
 - Reproducao de audio local via `blob:`, `asset:` e `http://asset.localhost`.

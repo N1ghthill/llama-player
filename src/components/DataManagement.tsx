@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, memo } from "react";
 import {
   clearAllLocalData,
   clearLocalPreferences,
@@ -13,7 +13,7 @@ interface DataManagementProps {
   onClose: () => void;
 }
 
-export function DataManagement({ version, onClose }: DataManagementProps) {
+export const DataManagement = memo(function DataManagement({ version, onClose }: DataManagementProps) {
   const [items, setItems] = useState<LocalDataSummary[]>([]);
   const [cacheSize, setCacheSize] = useState(0);
   const [totalSize, setTotalSize] = useState(0);
@@ -137,4 +137,4 @@ export function DataManagement({ version, onClose }: DataManagementProps) {
       </div>
     </section>
   );
-}
+});

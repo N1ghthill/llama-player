@@ -11,19 +11,19 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
   const handleTimeUpdate = useCallback(
     (time: number) => {
       if (!isSeekingRef.current) {
-        player.setCurrentTime(time);
+        player.actions.setCurrentTime(time);
       }
     },
-    [player]
+    [player.actions]
   );
 
   const handleDurationChange = useCallback(
     (duration: number) => {
       if (isFinite(duration) && duration > 0) {
-        player.setDuration(duration);
+        player.actions.setDuration(duration);
       }
     },
-    [player]
+    [player.actions]
   );
 
   const handleEnded = useCallback(() => {
@@ -44,7 +44,7 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
       }
 
       if (nextTrack) {
-        player.play(nextTrack);
+        player.actions.play(nextTrack);
         return;
       }
     }
@@ -52,19 +52,19 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
     // Fallback: lógica normal (sem gapless)
     if (repeatMode === "one" && currentTrack) {
       // Repeat one: replay the same track
-      player.play(currentTrack);
+      player.actions.play(currentTrack);
     } else if (repeatMode === "all" && playlist.length > 0) {
-      player.next();
+      player.actions.next();
     } else {
       // "none" or end of playlist: stop
       const currentIndex = playlist.findIndex(
         (t) => t.id === currentTrack?.id
       );
       if (currentIndex < playlist.length - 1) {
-        player.next();
+        player.actions.next();
       } else {
-        player.pause();
-        player.seek(0);
+        player.actions.pause();
+        player.actions.seek(0);
       }
     }
   }, [player]);
@@ -112,27 +112,30 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
   });
 
   // Agora que o audio engine existe, podemos definir o callback real
-  gaplessCallbackRef.current = useCallback(() => {
-    const { repeatMode, playlist, currentTrack, gaplessEnabled } = player.state;
-    if (!gaplessEnabled) return;
+  // Usamos um efeito para atualizar a ref sem violar regras dos hooks
+  useEffect(() => {
+    gaplessCallbackRef.current = () => {
+      const { repeatMode, playlist, currentTrack, gaplessEnabled } = player.state;
+      if (!gaplessEnabled) return;
 
-    let nextTrack: Track | null = null;
+      let nextTrack: Track | null = null;
 
-    if (repeatMode === "one" && currentTrack) {
-      nextTrack = currentTrack;
-    } else {
-      const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
-      if (currentIndex >= 0 && currentIndex < playlist.length - 1) {
-        nextTrack = playlist[currentIndex + 1];
-      } else if (repeatMode === "all" && playlist.length > 0) {
-        nextTrack = playlist[0];
+      if (repeatMode === "one" && currentTrack) {
+        nextTrack = currentTrack;
+      } else {
+        const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
+        if (currentIndex >= 0 && currentIndex < playlist.length - 1) {
+          nextTrack = playlist[currentIndex + 1];
+        } else if (repeatMode === "all" && playlist.length > 0) {
+          nextTrack = playlist[0];
+        }
       }
-    }
 
-    if (nextTrack) {
-      audio.preloadNextTrack(nextTrack);
-    }
-  }, [player, audio]);
+      if (nextTrack) {
+        audio.preloadNextTrack(nextTrack);
+      }
+    };
+  });
 
   // When currentTrack changes, load it in the audio engine with crossfade
   useEffect(() => {
@@ -164,14 +167,20 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
   const seek = useCallback(
     (time: number) => {
       isSeekingRef.current = true;
-      player.seek(time);
+      player.actions.seek(time);
       audio.seek(time);
-      // Small timeout to allow audio to process the seek
-      setTimeout(() => {
-        isSeekingRef.current = false;
-      }, 50);
+      // Usa o evento nativo 'seeked' para liberar o ref exatamente
+      // quando o áudio terminar de buscar, sem timeout arbitrário
+      const audioEl = audio.audioRef.current;
+      if (audioEl) {
+        const onSeeked = () => {
+          isSeekingRef.current = false;
+          audioEl.removeEventListener("seeked", onSeeked);
+        };
+        audioEl.addEventListener("seeked", onSeeked);
+      }
     },
-    [player, audio]
+    [player.actions, audio]
   );
 
   // Override play to ensure track is loaded
@@ -180,36 +189,36 @@ export function usePlayerWithAudio(initialPlaylist: Track[] = []) {
       if (track) {
         audio.loadTrack(track, player.state.crossfadeDuration);
       }
-      player.play(track);
+      player.actions.play(track);
     },
-    [player, audio]
+    [player.actions, player.state.crossfadeDuration, audio]
   );
 
   // Override stop
   const stop = useCallback(() => {
-    player.stop();
+    player.actions.stop();
     audio.stop();
-  }, [player, audio]);
+  }, [player.actions, audio]);
 
   return {
     state: player.state,
     play,
-    pause: player.pause,
+    pause: player.actions.pause,
     stop,
-    next: player.next,
-    prev: player.prev,
+    next: player.actions.next,
+    prev: player.actions.prev,
     seek,
-    setVolume: player.setVolume,
-    loadPlaylist: player.loadPlaylist,
-    addTrack: player.addTrack,
-    removeTrack: player.removeTrack,
-    reorderPlaylist: player.reorderPlaylist,
-    setRepeatMode: player.setRepeatMode,
-    toggleShuffle: player.toggleShuffle,
-    toggleFavorite: player.toggleFavorite,
-    loadFavorites: player.loadFavorites,
-    setCrossfade: player.setCrossfade,
-    toggleGapless: player.toggleGapless,
+    setVolume: player.actions.setVolume,
+    loadPlaylist: player.actions.loadPlaylist,
+    addTrack: player.actions.addTrack,
+    removeTrack: player.actions.removeTrack,
+    reorderPlaylist: player.actions.reorderPlaylist,
+    setRepeatMode: player.actions.setRepeatMode,
+    toggleShuffle: player.actions.toggleShuffle,
+    toggleFavorite: player.actions.toggleFavorite,
+    loadFavorites: player.actions.loadFavorites,
+    setCrossfade: player.actions.setCrossfade,
+    toggleGapless: player.actions.toggleGapless,
     audioRef: audio.audioRef,
   };
 }

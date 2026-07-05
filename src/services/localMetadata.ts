@@ -6,6 +6,7 @@
  * do arquivo via comando Tauri e extrai as tags ID3 usando jsmediatags.
  */
 
+import jsmediatags from "jsmediatags";
 import type { Track } from "../types";
 
 export interface LocalMetadataResult {
@@ -65,10 +66,7 @@ function readId3Tags(
     };
 
     try {
-      // jsmediatags espera um objeto com slice(), como ArrayBuffer
-      const jsmediatags = require("jsmediatags");
-
-      jsmediatags.read(buffer, {
+      (jsmediatags as any).read(buffer, {
         onSuccess: (data: any) => {
           const tags = data.tags;
           let coverUrl: string | undefined;
