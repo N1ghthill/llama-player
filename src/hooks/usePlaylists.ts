@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import type { Track } from "../types";
+import { LOCAL_STORAGE_KEYS } from "../services/localData";
 
-const STORAGE_KEY = "llama-player-custom-playlists";
+const STORAGE_KEY = LOCAL_STORAGE_KEYS.playlists;
 
 export interface SavedPlaylist {
   id: string;

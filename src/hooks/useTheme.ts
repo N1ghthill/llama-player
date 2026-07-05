@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
+import { LOCAL_STORAGE_KEYS } from "../services/localData";
 
-const STORAGE_KEY = "llama-player-theme";
+const STORAGE_KEY = LOCAL_STORAGE_KEYS.theme;
 
 export type ThemeMode = "dark" | "light" | "winamp";
 
@@ -64,6 +65,20 @@ const THEMES: Record<ThemeMode, ThemeColors> = {
   },
 };
 
+/**
+ * Converte uma cor hex (#rrggbb) para rgba com alpha.
+ * Ex: hexToRgba("#00aa55", 0.16) → "rgba(0, 170, 85, 0.16)"
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return hex;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return hex;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function loadTheme(): ThemeMode {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -88,7 +103,7 @@ function applyTheme(mode: ThemeMode): void {
   root.style.setProperty("--text-muted", colors.textDim);
   root.style.setProperty("--border", colors.border);
   root.style.setProperty("--accent", colors.accent);
-  root.style.setProperty("--accent-soft", colors.accentDim + "2a");
+  root.style.setProperty("--accent-soft", hexToRgba(colors.accentDim, 0.16));
   root.style.setProperty("--danger", colors.highlight);
   root.style.setProperty("--meter", colors.progressFill);
   root.style.setProperty("--shadow", colors.shadow);

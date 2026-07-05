@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getCacheStats, clearAudioCache, formatCacheSize } from "../hooks/useAudioCache";
+import { getCacheStats, clearAudioCache, formatCacheSize } from "../services/audioCache";
 
 export function CacheStatus() {
   const [stats, setStats] = useState<{ count: number; totalSize: number; maxSize: number } | null>(null);

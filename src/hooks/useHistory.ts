@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import type { Track } from "../types";
+import { LOCAL_STORAGE_KEYS } from "../services/localData";
 
-const HISTORY_STORAGE_KEY = "llama-player-history";
+const HISTORY_STORAGE_KEY = LOCAL_STORAGE_KEYS.history;
 const MAX_HISTORY = 100;
 
 interface HistoryEntry {

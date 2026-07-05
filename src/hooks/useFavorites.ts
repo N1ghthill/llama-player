@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
+import { LOCAL_STORAGE_KEYS } from "../services/localData";
 
-const STORAGE_KEY = "llama-player-favorites";
+const STORAGE_KEY = LOCAL_STORAGE_KEYS.favorites;
 
 function loadFavoritesFromStorage(): string[] {
   try {
