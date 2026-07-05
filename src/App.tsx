@@ -7,6 +7,7 @@ import { useFavorites } from "./hooks/useFavorites";
 import { useHistory } from "./hooks/useHistory";
 import { usePlaylists } from "./hooks/usePlaylists";
 import { useTheme } from "./hooks/useTheme";
+import { useLyrics } from "./hooks/useLyrics";
 import {
   TitleBar,
   Playlist,
@@ -16,6 +17,8 @@ import {
   AudioVisualizer,
   HistoryPanel,
   PlaylistManager,
+  LyricsDisplay,
+  DataManagement,
 } from "./components";
 import type { Track } from "./types";
 
@@ -41,6 +44,23 @@ function inferAudioMimeType(fileName: string): string {
   }
 }
 
+function createFallbackTrack(path: string, src: string): Track {
+  const name = path.split(/[/\\]/).pop() || path;
+
+  return {
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: name.replace(/\.[^/.]+$/, ""),
+    duration: 0,
+    src,
+    filePath: path,
+    mimeType: inferAudioMimeType(name),
+  };
+}
+
+async function createTrackFromLocalPath(path: string, src: string): Promise<Track> {
+  return createFallbackTrack(path, src);
+}
+
 function App() {
   const {
     state,
@@ -56,6 +76,8 @@ function App() {
     setRepeatMode,
     toggleFavorite: togglePlayerFavorite,
     loadFavorites: loadPlayerFavorites,
+    setCrossfade,
+    toggleGapless,
     audioRef,
   } = usePlayerWithAudio([]);
 
@@ -63,6 +85,7 @@ function App() {
   const {
     state: tauriState,
     openFilePicker,
+    openFolderPicker,
     filePathToUrl,
     sendNotification,
     registerShortcuts,
@@ -73,11 +96,14 @@ function App() {
   const playlists = usePlaylists();
   const { theme, cycleTheme } = useTheme();
   const visualizer = useAudioVisualizer(audioRef, state.isPlaying);
+  const lyrics = useLyrics();
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ processed: number; total: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showPlaylistManager, setShowPlaylistManager] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showDataManagement, setShowDataManagement] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,7 +149,7 @@ function App() {
     navigator.mediaSession.setActionHandler("previoustrack", () => prev());
   }, [state.currentTrack, play, pause, next, prev]);
 
-  // Notificação ao trocar de música + histórico
+  // Notificação ao trocar de música + histórico + letras
   useEffect(() => {
     if (state.currentTrack && state.isPlaying) {
       sendNotification(
@@ -133,8 +159,18 @@ function App() {
           : undefined
       );
       history.addEntry(state.currentTrack);
+      lyrics.loadLyrics(state.currentTrack.title, state.currentTrack.artist);
     }
   }, [state.currentTrack?.id, state.isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Atualiza letras sincronizadas com o tempo
+  useEffect(() => {
+    if (!showLyrics) return;
+    const interval = setInterval(() => {
+      lyrics.updateTime(state.currentTime);
+    }, 100); // 10 updates per second
+    return () => clearInterval(interval);
+  }, [showLyrics, state.currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Verifica updates no desktop. O updater exige endpoint e assinatura configurados.
   useEffect(() => {
@@ -196,42 +232,21 @@ function App() {
         const paths = await openFilePicker();
         if (!paths || paths.length === 0) return;
 
-        const files: File[] = [];
-        const fallbackTracks: Track[] = [];
+        const localTracks: Track[] = [];
 
         for (const path of paths) {
           const url = await filePathToUrl(path);
-          const name = path.split(/[/\\]/).pop() || path;
-
-          try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Falha ao ler arquivo: ${response.status}`);
-            const blob = await response.blob();
-            files.push(new File([blob], name, { type: blob.type || inferAudioMimeType(name) }));
-          } catch {
-            fallbackTracks.push({
-              id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              title: name.replace(/\.[^/.]+$/, ""),
-              duration: 0,
-              src: url,
-            });
-          }
+          localTracks.push(await createTrackFromLocalPath(path, url));
         }
 
-        const processedTracks = files.length > 0
-          ? await processFiles(files, (progress) => {
-              setLoadingProgress(progress);
-            })
-          : [];
-        const tracks = markFavoriteTracks(processedTracks);
-        const allTracks = [...tracks, ...markFavoriteTracks(fallbackTracks)];
+        const allTracks = markFavoriteTracks(localTracks);
 
         for (const track of allTracks) {
           addTrack(track);
         }
 
-        if (!currentTrackRef.current && tracks.length > 0) {
-          play(tracks[0]);
+        if (!currentTrackRef.current && allTracks.length > 0) {
+          play(allTracks[0]);
         }
       } catch (err) {
         console.error("[Llama Player] Erro ao abrir arquivos:", err);
@@ -241,6 +256,69 @@ function App() {
     } else {
       // Fallback: input file HTML
       fileInputRef.current?.click();
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    if (tauriState.isTauri) {
+      setIsLoading(true);
+      try {
+        const paths = await openFolderPicker();
+        if (!paths || paths.length === 0) return;
+
+        const localTracks: Track[] = [];
+        for (const path of paths) {
+          const url = await filePathToUrl(path);
+          localTracks.push(await createTrackFromLocalPath(path, url));
+          setLoadingProgress({ processed: localTracks.length, total: paths.length });
+        }
+
+        const allTracks = markFavoriteTracks(localTracks);
+
+        for (const track of allTracks) {
+          addTrack(track);
+        }
+
+        if (!currentTrackRef.current && allTracks.length > 0) {
+          play(allTracks[0]);
+        }
+      } catch (err) {
+        console.error("[Llama Player] Erro ao abrir pasta:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Fallback: input file HTML com webkitdirectory
+      const input = document.createElement("input");
+      input.type = "file";
+      input.webkitdirectory = true;
+      input.accept = "audio/*";
+      input.onchange = async (e: Event) => {
+        const target = e.target as HTMLInputElement;
+        const fileList = target.files;
+        if (!fileList || fileList.length === 0) return;
+
+        setIsLoading(true);
+        try {
+          const fileArray = Array.from(fileList);
+          const processedTracks = await processFiles(fileArray, (progress) => {
+            setLoadingProgress(progress);
+          });
+          const tracks = markFavoriteTracks(processedTracks);
+          for (const track of tracks) {
+            addTrack(track);
+          }
+          if (!currentTrackRef.current && tracks.length > 0) {
+            play(tracks[0]);
+          }
+        } catch (err) {
+          console.error("[Llama Player] Erro ao processar pasta:", err);
+        } finally {
+          setIsLoading(false);
+          setLoadingProgress(null);
+        }
+      };
+      input.click();
     }
   };
 
@@ -366,8 +444,7 @@ function App() {
         <section className="deck-panel">
           <div className="deck-visual">
             <AudioVisualizer
-              frequencyData={visualizer.frequencyData}
-              waveformData={visualizer.waveformData}
+              getVisualizerData={visualizer.getVisualizerData}
               isActive={visualizer.isActive}
             />
           </div>
@@ -379,6 +456,8 @@ function App() {
               isPlaying={state.isPlaying}
               isShuffled={state.isShuffled}
               repeatMode={state.repeatMode}
+              crossfadeDuration={state.crossfadeDuration}
+              gaplessEnabled={state.gaplessEnabled}
               isCompact={isCompact}
               onPlay={() => play()}
               onPause={pause}
@@ -388,6 +467,8 @@ function App() {
               onRepeatModeChange={setRepeatMode}
               onToggleFavorite={handleToggleFavorite}
               onToggleCompact={() => setIsCompact((v) => !v)}
+              onCrossfadeChange={setCrossfade}
+              onToggleGapless={toggleGapless}
             />
 
             <ProgressBar
@@ -411,6 +492,14 @@ function App() {
               ? "⏳ Lendo..."
               : "📂 Arquivo local"}
           </button>
+          <button
+            className="toolbar-btn"
+            onClick={handleOpenFolder}
+            disabled={isLoading}
+            title="Abrir pasta de músicas (varredura recursiva)"
+          >
+            📁 Abrir pasta
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -432,6 +521,20 @@ function App() {
             title="Gerenciar playlists"
           >
             📋 Playlists
+          </button>
+          <button
+            className={`toolbar-btn ${showLyrics ? "toolbar-btn-active" : ""}`}
+            onClick={() => setShowLyrics((v) => !v)}
+            title="Letras sincronizadas"
+          >
+            💬 Letras
+          </button>
+          <button
+            className={`toolbar-btn ${showDataManagement ? "toolbar-btn-active" : ""}`}
+            onClick={() => setShowDataManagement((v) => !v)}
+            title="Dados locais"
+          >
+            ⚙ Dados
           </button>
           <button
             className="toolbar-btn"
@@ -480,7 +583,25 @@ function App() {
               />
             )}
 
-            {!showHistory && !showPlaylistManager && (
+            {showLyrics && (
+              <LyricsDisplay
+                lines={lyrics.lyrics?.lines ?? []}
+                currentLine={lyrics.currentLine}
+                nextLine={lyrics.nextLine}
+                progress={lyrics.progress}
+                isLoading={lyrics.isLoading}
+                error={lyrics.error}
+              />
+            )}
+
+            {showDataManagement && (
+              <DataManagement
+                version={__APP_VERSION__}
+                onClose={() => setShowDataManagement(false)}
+              />
+            )}
+
+            {!showHistory && !showPlaylistManager && !showLyrics && !showDataManagement && (
               <div className="library-empty-panel">
                 <span className="library-empty-title">Biblioteca local</span>
                 <span>Arraste músicas para a lista ou abra arquivos do computador.</span>
