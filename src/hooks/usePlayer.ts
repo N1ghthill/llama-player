@@ -11,6 +11,8 @@ const initialState: PlayerState = {
   originalPlaylist: [],
   repeatMode: "none",
   isShuffled: false,
+  crossfadeDuration: 0,
+  gaplessEnabled: false,
 };
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -125,6 +127,12 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
     case "SET_REPEAT_MODE":
       return { ...state, repeatMode: action.mode };
 
+    case "SET_CROSSFADE":
+      return { ...state, crossfadeDuration: Math.max(0, Math.min(30, action.duration)) };
+
+    case "TOGGLE_GAPLESS":
+      return { ...state, gaplessEnabled: !state.gaplessEnabled };
+
     case "TOGGLE_SHUFFLE": {
       if (state.isShuffled) {
         // Restore original order
@@ -199,6 +207,8 @@ export function usePlayer(initialPlaylist: Track[] = []) {
   const setCurrentTime = useCallback((time: number) => dispatch({ type: "SET_CURRENT_TIME", time }), []);
   const toggleFavorite = useCallback((trackId: string) => dispatch({ type: "TOGGLE_FAVORITE", trackId }), []);
   const loadFavorites = useCallback((favoriteIds: string[]) => dispatch({ type: "LOAD_FAVORITES", favoriteIds }), []);
+  const setCrossfade = useCallback((duration: number) => dispatch({ type: "SET_CROSSFADE", duration }), []);
+  const toggleGapless = useCallback(() => dispatch({ type: "TOGGLE_GAPLESS" }), []);
 
   return {
     state,
@@ -219,5 +229,7 @@ export function usePlayer(initialPlaylist: Track[] = []) {
     setCurrentTime,
     toggleFavorite,
     loadFavorites,
+    setCrossfade,
+    toggleGapless,
   };
 }

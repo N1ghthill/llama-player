@@ -6,6 +6,7 @@ export interface Track {
   duration: number; // seconds
   coverUrl?: string;
   src?: string; // file path or URL
+  filePath?: string; // native local file path, used by Tauri playback fallback
   mimeType?: string;
   size?: number;
   isFavorite?: boolean;
@@ -23,6 +24,8 @@ export interface PlayerState {
   originalPlaylist: Track[];
   repeatMode: RepeatMode;
   isShuffled: boolean;
+  crossfadeDuration: number; // seconds, 0 = disabled
+  gaplessEnabled: boolean; // gapless playback (instant transition)
 }
 
 export type PlayerAction =
@@ -42,4 +45,6 @@ export type PlayerAction =
   | { type: "SET_DURATION"; duration: number }
   | { type: "SET_CURRENT_TIME"; time: number }
   | { type: "TOGGLE_FAVORITE"; trackId: string }
-  | { type: "LOAD_FAVORITES"; favoriteIds: string[] };
+  | { type: "LOAD_FAVORITES"; favoriteIds: string[] }
+  | { type: "SET_CROSSFADE"; duration: number }
+  | { type: "TOGGLE_GAPLESS" };

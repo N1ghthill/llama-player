@@ -6,6 +6,8 @@ interface PlayerControlsProps {
   isPlaying: boolean;
   isShuffled: boolean;
   repeatMode: RepeatMode;
+  crossfadeDuration: number;
+  gaplessEnabled: boolean;
   isCompact?: boolean;
   onPlay: () => void;
   onPause: () => void;
@@ -15,6 +17,8 @@ interface PlayerControlsProps {
   onRepeatModeChange?: (mode: RepeatMode) => void;
   onToggleFavorite?: (trackId: string) => void;
   onToggleCompact?: () => void;
+  onCrossfadeChange?: (duration: number) => void;
+  onToggleGapless?: () => void;
 }
 
 export function PlayerControls({
@@ -23,6 +27,8 @@ export function PlayerControls({
   isPlaying,
   isShuffled,
   repeatMode,
+  crossfadeDuration,
+  gaplessEnabled,
   isCompact = false,
   onPlay,
   onPause,
@@ -32,6 +38,8 @@ export function PlayerControls({
   onRepeatModeChange,
   onToggleFavorite,
   onToggleCompact,
+  onCrossfadeChange,
+  onToggleGapless,
 }: PlayerControlsProps) {
   const handleRepeatClick = () => {
     if (!onRepeatModeChange) return;
@@ -147,6 +155,47 @@ export function PlayerControls({
           </button>
         )}
       </div>
+
+      {onCrossfadeChange && (
+        <div className="crossfade-control">
+          <label className="crossfade-label" title="Crossfade entre músicas">
+            🔀 Crossfade: {crossfadeDuration > 0 ? `${crossfadeDuration}s` : "OFF"}
+          </label>
+          <input
+            type="range"
+            className="crossfade-slider"
+            min={0}
+            max={15}
+            step={1}
+            value={crossfadeDuration}
+            onChange={(e) => onCrossfadeChange(Number(e.target.value))}
+            title={`Crossfade: ${crossfadeDuration > 0 ? `${crossfadeDuration} segundos` : "Desativado"}`}
+          />
+        </div>
+      )}
+
+      {onToggleGapless && (
+        <div className="gapless-control">
+          <label
+            className={`gapless-label${crossfadeDuration > 0 ? " disabled" : ""}`}
+            title={
+              crossfadeDuration > 0
+                ? "Desative o crossfade para usar gapless"
+                : gaplessEnabled
+                ? "Gapless: transição instantânea entre faixas"
+                : "Gapless: desativado"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={gaplessEnabled}
+              onChange={onToggleGapless}
+              disabled={crossfadeDuration > 0}
+            />
+            ⏭ Gapless
+          </label>
+        </div>
+      )}
     </section>
   );
 }
