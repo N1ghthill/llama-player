@@ -21,45 +21,7 @@ import {
   DataManagement,
 } from "./components";
 import type { Track } from "./types";
-
-function inferAudioMimeType(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop();
-  switch (ext) {
-    case "mp3":
-      return "audio/mpeg";
-    case "wav":
-      return "audio/wav";
-    case "flac":
-      return "audio/flac";
-    case "ogg":
-      return "audio/ogg";
-    case "aac":
-      return "audio/aac";
-    case "m4a":
-      return "audio/mp4";
-    case "opus":
-      return "audio/ogg";
-    default:
-      return "audio/mpeg";
-  }
-}
-
-function createFallbackTrack(path: string, src: string): Track {
-  const name = path.split(/[/\\]/).pop() || path;
-
-  return {
-    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: name.replace(/\.[^/.]+$/, ""),
-    duration: 0,
-    src,
-    filePath: path,
-    mimeType: inferAudioMimeType(name),
-  };
-}
-
-async function createTrackFromLocalPath(path: string, src: string): Promise<Track> {
-  return createFallbackTrack(path, src);
-}
+import { createTrackFromLocalPath } from "./services/localMetadata";
 
 function App() {
   const {
