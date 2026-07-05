@@ -37,7 +37,6 @@ export function parseLRC(lrcText: string): LRCData {
   const metadata: LRCMetadata = {};
   const lines: LRCLine[] = [];
 
-  const lineRegex = /^\[((?:\d{2}:\d{2}[.:]\d{2,3})+)\](.*)$/;
   const metaRegex = /^\[(ti|ar|al|by|offset):(.*)\]$/i;
 
   for (const rawLine of lrcText.split("\n")) {
@@ -60,20 +59,25 @@ export function parseLRC(lrcText: string): LRCData {
     }
 
     // Check for timed lines
-    const lineMatch = line.match(lineRegex);
-    if (lineMatch) {
-      const timestampsStr = lineMatch[1];
-      const text = lineMatch[2].trim();
+    // Handle multiple timestamps: [00:01.00][00:15.00]text
+    const tsRegex = /\[(\d{2}):(\d{2})[.:](\d{2,3})\]/g;
+    const timestamps: number[] = [];
+    let lastIndex = 0;
+    let tsMatch;
 
-      // Handle multiple timestamps: [00:01.00][00:15.00]text
-      const tsRegex = /(\d{2}):(\d{2})[.:](\d{2,3})/g;
-      let tsMatch;
-      while ((tsMatch = tsRegex.exec(timestampsStr)) !== null) {
-        const minutes = parseInt(tsMatch[1], 10);
-        const seconds = parseInt(tsMatch[2], 10);
-        const centiseconds = parseInt(tsMatch[3], 10);
-        // If 3 digits, it's milliseconds; if 2, it's centiseconds
-        const time = minutes * 60 + seconds + (tsMatch[3].length === 3 ? centiseconds / 1000 : centiseconds / 100);
+    while ((tsMatch = tsRegex.exec(line)) !== null) {
+      const minutes = parseInt(tsMatch[1], 10);
+      const seconds = parseInt(tsMatch[2], 10);
+      const centiseconds = parseInt(tsMatch[3], 10);
+      // If 3 digits, it's milliseconds; if 2, it's centiseconds
+      const time = minutes * 60 + seconds + (tsMatch[3].length === 3 ? centiseconds / 1000 : centiseconds / 100);
+      timestamps.push(time);
+      lastIndex = tsMatch.index + tsMatch[0].length;
+    }
+
+    if (timestamps.length > 0) {
+      const text = line.slice(lastIndex).trim();
+      for (const time of timestamps) {
         lines.push({ time, text });
       }
     }
