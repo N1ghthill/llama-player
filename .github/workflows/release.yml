@@ -5,29 +5,88 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to release, for example v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event.inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    name: Validate release inputs
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ensure tag matches package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="${RELEASE_TAG#v}"
+          if [ "$RELEASE_TAG" = "$TAG" ]; then
+            echo "Release tag must start with v, got: $RELEASE_TAG"
+            exit 1
+          fi
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "package.json version ($VERSION) does not match tag ($RELEASE_TAG)"
+            exit 1
+          fi
+
+      - name: Release config validation
+        run: npm run release:validate
+
+      - name: Ensure updater signing key is configured
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is required for release builds"
+            exit 1
+          fi
+
   build:
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: ubuntu-22.04
             args: ""
+            checksum: linux-x64
           - platform: windows-latest
             args: ""
+            checksum: windows-x64
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
+            checksum: macos-x64
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
+            checksum: macos-aarch64
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -57,6 +116,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: TypeScript check
+        run: npm run check
+
+      - name: Release config validation
+        run: npm run release:validate
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -64,9 +129,27 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Llama Player ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download this version."
+          tagName: ${{ github.event.inputs.release_tag || github.ref_name }}
+          releaseName: "Llama Player ${{ github.event.inputs.release_tag || github.ref_name }}"
+          releaseBody: |
+            Beta desktop build for Llama Player.
+
+            Installable artifacts are attached below. Before publishing this draft, validate installation, local MP3 playback, updater behavior and uninstall for the target platform.
+
+            See docs/RELEASE.md and docs/REVIEW-CHECKLIST.md for the release gate.
           releaseDraft: true
-          prerelease: false
+          prerelease: true
           args: ${{ matrix.args }}
+
+      - name: Generate checksums
+        env:
+          CHECKSUMS_SUFFIX: ${{ matrix.checksum }}
+        run: npm run checksums
+
+      - name: Upload checksums to draft
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          draft: true
+          prerelease: true
+          files: dist/checksums/*

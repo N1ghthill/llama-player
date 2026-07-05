@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Release checklist
+    url: https://github.com/N1ghthill/llama-player/blob/main/docs/REVIEW-CHECKLIST.md
+    about: Check release gates before publishing installable builds.

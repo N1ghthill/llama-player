@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a playback, install, update or UI problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Llama Player version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS Intel
+        - macOS Apple Silicon
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - deb
+        - AppImage
+        - MSI
+        - DMG
+        - source/dev
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the exact steps that trigger the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: audio
+    attributes:
+      label: Audio file details
+      description: Format, size, path style, and whether other players can open it. Do not paste private paths if they are sensitive.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove private paths, usernames, secrets and tokens before posting.

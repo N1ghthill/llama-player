@@ -1,0 +1,57 @@
+name: Install or update problem
+description: Report installer, updater or uninstall issues.
+title: "[Install/Update]: "
+labels:
+  - install
+body:
+  - type: input
+    id: from_version
+    attributes:
+      label: From version
+      placeholder: "0.1.0"
+  - type: input
+    id: to_version
+    attributes:
+      label: To version
+      placeholder: "0.1.1"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS Intel
+        - macOS Apple Silicon
+    validations:
+      required: true
+  - type: dropdown
+    id: artifact
+    attributes:
+      label: Artifact
+      options:
+        - deb
+        - AppImage
+        - MSI
+        - DMG
+        - updater
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: Include install/update/uninstall commands or UI actions.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Remove private paths, usernames, secrets and tokens before posting.
