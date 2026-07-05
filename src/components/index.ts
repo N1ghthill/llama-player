@@ -7,3 +7,5 @@ export { AudioVisualizer } from "./AudioVisualizer";
 export { HistoryPanel } from "./HistoryPanel";
 export { PlaylistManager } from "./PlaylistManager";
 export { CacheStatus } from "./CacheStatus";
+export { LyricsDisplay } from "./LyricsDisplay";
+export { DataManagement } from "./DataManagement";

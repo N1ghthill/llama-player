@@ -2,7 +2,7 @@ interface TitleBarProps {
   title?: string;
 }
 
-export function TitleBar({ title = "🎵 Llama Player v0.1" }: TitleBarProps) {
+export function TitleBar({ title = `🎵 Llama Player v${__APP_VERSION__}` }: TitleBarProps) {
   const handleMinimize = async () => {
     if (!("__TAURI_INTERNALS__" in window)) return;
     const { getCurrentWindow } = await import("@tauri-apps/api/window");

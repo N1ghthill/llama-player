@@ -57,6 +57,8 @@ export function Playlist({
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [filterArtist, setFilterArtist] = useState<string | null>(null);
+  const [filterAlbum, setFilterAlbum] = useState<string | null>(null);
 
   // Virtual scrolling state
   const scrollContainerRef = useRef<HTMLUListElement>(null);
@@ -92,14 +94,43 @@ export function Playlist({
     [tracks, sortField, sortDirection, onReorderPlaylist]
   );
 
+  // Extrai artistas e álbuns únicos para os filtros
+  const uniqueArtists = useMemo(() => {
+    const artists = new Set<string>();
+    tracks.forEach((t) => { if (t.artist) artists.add(t.artist); });
+    return Array.from(artists).sort();
+  }, [tracks]);
+
+  const uniqueAlbums = useMemo(() => {
+    const albums = new Set<string>();
+    tracks.forEach((t) => { if (t.album) albums.add(t.album); });
+    return Array.from(albums).sort();
+  }, [tracks]);
+
   const filteredTracks = useMemo(() => {
-    if (!normalizedQuery) return tracks;
-    return tracks.filter((track) => {
-      const title = normalizeText(track.title);
-      const artist = track.artist ? normalizeText(track.artist) : "";
-      return title.includes(normalizedQuery) || artist.includes(normalizedQuery);
-    });
-  }, [tracks, normalizedQuery]);
+    let result = tracks;
+
+    // Filtro textual
+    if (normalizedQuery) {
+      result = result.filter((track) => {
+        const title = normalizeText(track.title);
+        const artist = track.artist ? normalizeText(track.artist) : "";
+        return title.includes(normalizedQuery) || artist.includes(normalizedQuery);
+      });
+    }
+
+    // Filtro por artista
+    if (filterArtist) {
+      result = result.filter((track) => track.artist === filterArtist);
+    }
+
+    // Filtro por álbum
+    if (filterAlbum) {
+      result = result.filter((track) => track.album === filterAlbum);
+    }
+
+    return result;
+  }, [tracks, normalizedQuery, filterArtist, filterAlbum]);
 
   const filteredToOriginalIndex = useMemo(() => {
     if (!normalizedQuery) return null;
@@ -355,6 +386,44 @@ export function Playlist({
             : `${filteredTracks.length} de ${tracks.length} música${tracks.length !== 1 ? "s" : ""}`}
         </div>
       )}
+      <div className="playlist-filter-bar">
+        {uniqueArtists.length > 0 && (
+          <select
+            className="playlist-filter-select"
+            value={filterArtist ?? ""}
+            onChange={(e) => setFilterArtist(e.target.value || null)}
+            aria-label="Filtrar por artista"
+          >
+            <option value="">Todos os artistas</option>
+            {uniqueArtists.map((artist) => (
+              <option key={artist} value={artist}>{artist}</option>
+            ))}
+          </select>
+        )}
+        {uniqueAlbums.length > 0 && (
+          <select
+            className="playlist-filter-select"
+            value={filterAlbum ?? ""}
+            onChange={(e) => setFilterAlbum(e.target.value || null)}
+            aria-label="Filtrar por álbum"
+          >
+            <option value="">Todos os álbuns</option>
+            {uniqueAlbums.map((album) => (
+              <option key={album} value={album}>{album}</option>
+            ))}
+          </select>
+        )}
+        {(filterArtist || filterAlbum) && (
+          <button
+            className="playlist-filter-clear"
+            onClick={() => { setFilterArtist(null); setFilterAlbum(null); }}
+            title="Limpar filtros"
+            aria-label="Limpar filtros"
+          >
+            ✕ Limpar filtros
+          </button>
+        )}
+      </div>
       <div className="playlist-sort-bar">
         <button
           className={`playlist-sort-btn ${sortField === "title" ? "active" : ""}`}
