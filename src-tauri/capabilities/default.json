@@ -13,37 +13,9 @@
     "core:window:allow-set-title",
     "dialog:default",
     "dialog:allow-open",
-    "dialog:allow-save",
-    {
-      "identifier": "fs:default",
-      "allow": [
-        { "path": "$AUDIO/**" },
-        { "path": "$HOME/Música/**" },
-        { "path": "$HOME/Music/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOWNLOAD/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-read",
-      "allow": [
-        { "path": "$AUDIO/**" },
-        { "path": "$HOME/Música/**" },
-        { "path": "$HOME/Music/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOWNLOAD/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [
-        { "path": "$AUDIO/**" },
-        { "path": "$HOME/Música/**" },
-        { "path": "$HOME/Music/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOWNLOAD/**" }
-      ]
-    },
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
     {
       "identifier": "shell:allow-open",
       "allow": [

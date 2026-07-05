@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Llama Player",
   "version": "0.1.1",
-  "identifier": "com.llamaplayer.app",
+  "identifier": "com.github.n1ghthill.llama-player",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -23,13 +23,32 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; media-src 'self' data: asset:; connect-src 'self' asset:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' asset: http://asset.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [
+            "$AUDIO/**",
+            "$HOME/Música/**",
+            "$HOME/Music/**",
+            "$DESKTOP/**",
+            "$DOWNLOAD/**"
+          ]
+        }
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "rpm", "msi", "dmg"],
     "createUpdaterArtifacts": true,
+    "publisher": "N1ghthill",
+    "homepage": "https://github.com/N1ghthill/llama-player",
+    "copyright": "Copyright (c) 2026 Llama Player contributors",
+    "license": "MIT",
+    "category": "Music",
+    "shortDescription": "Local desktop music player",
+    "longDescription": "Llama Player is a local desktop music player built with Tauri, React and TypeScript.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,13 +59,12 @@
     "linux": {
       "deb": {
         "depends": [
-          "libwebkit2gtk-4.1-0",
-          "libgtk-3-0",
-          "libglib2.0-0",
+          "libglib2.0-0t64 | libglib2.0-0",
           "libcairo2",
-          "libgdk-pixbuf2.0-0",
+          "libgdk-pixbuf-2.0-0 | libgdk-pixbuf2.0-0",
           "libpango-1.0-0",
-          "libatk1.0-0",
+          "libatk1.0-0t64 | libatk1.0-0",
+          "libgtk-3-0t64 | libgtk-3-0",
           "libjavascriptcoregtk-4.1-0",
           "libsoup-3.0-0"
         ]

@@ -15,6 +15,15 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export interface TauriState {
   isTauri: boolean;
   isReady: boolean;
@@ -122,6 +131,53 @@ export function useTauri() {
   }, []);
 
   /**
+   * Abre o seletor de pasta nativo e varre recursivamente por arquivos de áudio.
+   * Retorna os caminhos dos arquivos encontrados.
+   */
+  const openFolderPicker = useCallback(async (): Promise<string[] | null> => {
+    if (!isTauri()) {
+      // Fallback: input file HTML com webkitdirectory
+      return new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.webkitdirectory = true;
+        input.accept = "audio/*";
+        input.onchange = () => {
+          if (input.files) {
+            const paths = Array.from(input.files).map((f) => f.name);
+            resolve(paths);
+          } else {
+            resolve(null);
+          }
+        };
+        input.click();
+      });
+    }
+
+    try {
+      const dialog = await import("@tauri-apps/plugin-dialog");
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      const selected = await dialog.open({
+        multiple: false,
+        directory: true,
+        title: "Selecionar pasta de músicas",
+      });
+
+      if (!selected) return null;
+
+      const dirPath = Array.isArray(selected) ? selected[0] : selected;
+      if (!dirPath) return null;
+
+      const files = await invoke<string[]>("scan_audio_dir", { path: dirPath });
+      return files;
+    } catch (err) {
+      console.error("[Llama Player] Erro ao abrir pasta:", err);
+      return null;
+    }
+  }, []);
+
+  /**
    * Converte um caminho de arquivo local para URL acessível pelo frontend.
    */
   const filePathToUrl = useCallback(async (path: string): Promise<string> => {
@@ -218,8 +274,13 @@ export function useTauri() {
    * Abre uma URL no navegador padrão do sistema.
    */
   const openUrl = useCallback(async (url: string) => {
+    if (!isSafeExternalUrl(url)) {
+      console.warn("[Llama Player] URL externa bloqueada:", url);
+      return;
+    }
+
     if (!isTauri()) {
-      window.open(url, "_blank");
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -228,13 +289,14 @@ export function useTauri() {
       await shell.open(url);
     } catch (err) {
       console.warn("[Llama Player] Erro ao abrir URL:", err);
-      window.open(url, "_blank");
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   }, []);
 
   return {
     state,
     openFilePicker,
+    openFolderPicker,
     filePathToUrl,
     sendNotification,
     registerShortcuts,
