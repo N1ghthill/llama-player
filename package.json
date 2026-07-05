@@ -5,9 +5,16 @@
   "description": "🎵 Llama Player - Um player de música local inspirado em players desktop clássicos",
   "scripts": {
     "dev": "vite",
+    "check": "tsc --noEmit",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:check": "tauri build --no-bundle",
+    "desktop:build": "tauri build",
+    "checksums": "node scripts/generate-checksums.mjs",
+    "release:validate": "node scripts/validate-release-config.mjs",
+    "release:local": "npm run release:validate && npm run check && npm run build && npm run desktop:check"
   },
   "dependencies": {
     "@tauri-apps/plugin-process": "^2.3.1",
@@ -20,7 +27,6 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/cli": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-shell": "^2.3.5",
